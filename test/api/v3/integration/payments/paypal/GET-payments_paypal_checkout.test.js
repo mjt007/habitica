@@ -1,10 +1,10 @@
 import {
   generateUser,
 } from '../../../../../helpers/api-integration/v3';
-import paypalPayments from '../../../../../../website/server/libs/paypalPayments';
+import paypalPayments from '../../../../../../website/server/libs/payments/paypal';
 
 describe('payments : paypal #checkout', () => {
-  let endpoint = '/paypal/checkout';
+  const endpoint = '/paypal/checkout';
   let user;
 
   beforeEach(async () => {
@@ -15,7 +15,7 @@ describe('payments : paypal #checkout', () => {
     let checkoutStub;
 
     beforeEach(async () => {
-      checkoutStub = sinon.stub(paypalPayments, 'checkout').returnsPromise().resolves('/');
+      checkoutStub = sinon.stub(paypalPayments, 'checkout').resolves('/');
     });
 
     afterEach(() => {
@@ -31,7 +31,7 @@ describe('payments : paypal #checkout', () => {
         balance: 2,
       });
 
-      await user.get(endpoint);
+      await user.get(`${endpoint}?noRedirect=true`);
 
       expect(checkoutStub).to.be.calledOnce;
       expect(checkoutStub.args[0][0].gift).to.eql(undefined);

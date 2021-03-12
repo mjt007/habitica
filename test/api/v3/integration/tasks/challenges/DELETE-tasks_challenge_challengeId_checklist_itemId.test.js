@@ -1,10 +1,10 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
   generateGroup,
   generateChallenge,
   translate as t,
 } from '../../../../../helpers/api-integration/v3';
-import { v4 as generateUUID } from 'uuid';
 
 describe('DELETE /tasks/:taskId/checklist/:itemId', () => {
   let user;
@@ -15,6 +15,7 @@ describe('DELETE /tasks/:taskId/checklist/:itemId', () => {
     user = await generateUser();
     guild = await generateGroup(user);
     challenge = await generateChallenge(user, guild);
+    await user.post(`/challenges/${challenge._id}/join`);
   });
 
   it('fails on task not found', async () => {
@@ -26,7 +27,7 @@ describe('DELETE /tasks/:taskId/checklist/:itemId', () => {
   });
 
   it('fails on checklist item not found', async () => {
-    let createdTask = await user.post(`/tasks/challenge/${challenge._id}`, {
+    const createdTask = await user.post(`/tasks/challenge/${challenge._id}`, {
       type: 'daily',
       text: 'daily with checklist',
     });
@@ -39,17 +40,17 @@ describe('DELETE /tasks/:taskId/checklist/:itemId', () => {
   });
 
   it('returns error when user is not a member of the challenge', async () => {
-    let task = await user.post(`/tasks/challenge/${challenge._id}`, {
+    const task = await user.post(`/tasks/challenge/${challenge._id}`, {
       type: 'daily',
       text: 'Daily with checklist',
     });
 
-    let savedTask = await user.post(`/tasks/${task._id}/checklist`, {
+    const savedTask = await user.post(`/tasks/${task._id}/checklist`, {
       text: 'Checklist Item 1',
       completed: false,
     });
 
-    let anotherUser = await generateUser();
+    const anotherUser = await generateUser();
 
     await expect(anotherUser.del(`/tasks/${task._id}/checklist/${savedTask.checklist[0].id}`))
       .to.eventually.be.rejected.and.eql({
@@ -60,12 +61,12 @@ describe('DELETE /tasks/:taskId/checklist/:itemId', () => {
   });
 
   it('deletes a checklist item from a daily', async () => {
-    let task = await user.post(`/tasks/challenge/${challenge._id}`, {
+    const task = await user.post(`/tasks/challenge/${challenge._id}`, {
       type: 'daily',
       text: 'Daily with checklist',
     });
 
-    let savedTask = await user.post(`/tasks/${task._id}/checklist`, {text: 'Checklist Item 1', completed: false});
+    let savedTask = await user.post(`/tasks/${task._id}/checklist`, { text: 'Checklist Item 1', completed: false });
 
     await user.del(`/tasks/${task._id}/checklist/${savedTask.checklist[0].id}`);
     savedTask = await user.get(`/tasks/${task._id}`);
@@ -74,12 +75,12 @@ describe('DELETE /tasks/:taskId/checklist/:itemId', () => {
   });
 
   it('deletes a checklist item from a todo', async () => {
-    let task = await user.post(`/tasks/challenge/${challenge._id}`, {
+    const task = await user.post(`/tasks/challenge/${challenge._id}`, {
       type: 'todo',
       text: 'Todo with checklist',
     });
 
-    let savedTask = await user.post(`/tasks/${task._id}/checklist`, {text: 'Checklist Item 1', completed: false});
+    let savedTask = await user.post(`/tasks/${task._id}/checklist`, { text: 'Checklist Item 1', completed: false });
 
     await user.del(`/tasks/${task._id}/checklist/${savedTask.checklist[0].id}`);
     savedTask = await user.get(`/tasks/${task._id}`);
@@ -88,7 +89,7 @@ describe('DELETE /tasks/:taskId/checklist/:itemId', () => {
   });
 
   it('does not work with habits', async () => {
-    let habit = await user.post(`/tasks/challenge/${challenge._id}`, {
+    const habit = await user.post(`/tasks/challenge/${challenge._id}`, {
       type: 'habit',
       text: 'habit with checklist',
     });
@@ -101,7 +102,7 @@ describe('DELETE /tasks/:taskId/checklist/:itemId', () => {
   });
 
   it('does not work with rewards', async () => {
-    let reward = await user.post(`/tasks/challenge/${challenge._id}`, {
+    const reward = await user.post(`/tasks/challenge/${challenge._id}`, {
       type: 'reward',
       text: 'reward with checklist',
     });

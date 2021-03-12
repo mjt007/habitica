@@ -3,11 +3,12 @@ import {
   generateGroup,
   translate as t,
 } from '../../../../../helpers/api-integration/v3';
-import amzLib from '../../../../../../website/server/libs/amazonPayments';
+import amzLib from '../../../../../../website/server/libs/payments/amazon';
 
 describe('payments : amazon #subscribeCancel', () => {
-  let endpoint = '/amazon/subscribe/cancel';
-  let user, group, amazonSubscribeCancelStub;
+  const endpoint = '/amazon/subscribe/cancel?noRedirect=true';
+  let user; let group; let
+    amazonSubscribeCancelStub;
 
   beforeEach(async () => {
     user = await generateUser();
@@ -22,8 +23,8 @@ describe('payments : amazon #subscribeCancel', () => {
   });
 
   describe('success', () => {
-    beforeEach(async () => {
-      amazonSubscribeCancelStub = sinon.stub(amzLib, 'cancelSubscription').returnsPromise().resolves({});
+    beforeEach(() => {
+      amazonSubscribeCancelStub = sinon.stub(amzLib, 'cancelSubscription').resolves({});
     });
 
     afterEach(() => {
@@ -66,7 +67,7 @@ describe('payments : amazon #subscribeCancel', () => {
         'purchased.plan.lastBillingDate': new Date(),
       });
 
-      await user.get(`${endpoint}?groupId=${group._id}`);
+      await user.get(`${endpoint}&groupId=${group._id}`);
 
       expect(amazonSubscribeCancelStub).to.be.calledOnce;
       expect(amazonSubscribeCancelStub.args[0][0].user._id).to.eql(user._id);

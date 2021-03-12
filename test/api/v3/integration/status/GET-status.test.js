@@ -1,10 +1,10 @@
 import {
   requester,
-} from '../../../../helpers/api-v3-integration.helper';
+} from '../../../../helpers/api-integration/v3';
 
 describe('GET /status', () => {
   it('returns status: up', async () => {
-    let res = await requester().get('/status');
+    const res = await requester().get('/status');
     expect(res).to.eql({
       status: 'up',
     });

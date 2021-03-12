@@ -1,5 +1,5 @@
-import _ from 'lodash';
+import get from 'lodash/get';
 
 // TODO remove completely, only used in client
 
-module.exports = _.get;
+export default get;

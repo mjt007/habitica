@@ -1,9 +1,9 @@
 import _ from 'lodash';
-import Bluebird from 'bluebird';
 import { authWithHeaders } from '../../middlewares/auth';
-import analytics from '../../libs/analyticsService';
+import { getAnalyticsServiceByEnvironment } from '../../libs/analyticsService';
 import {
   model as Group,
+  basicFields as basicGroupFields,
 } from '../../models/group';
 import { model as User } from '../../models/user';
 import {
@@ -17,10 +17,14 @@ import {
 } from '../../libs/email';
 import common from '../../../common';
 import { sendNotification as sendPushNotification } from '../../libs/pushNotifications';
+import apiError from '../../libs/apiError';
+import { questActivityWebhook } from '../../libs/webhook';
+
+const analytics = getAnalyticsServiceByEnvironment();
 
 const questScrolls = common.content.quests;
 
-function canStartQuestAutomatically (group)  {
+function canStartQuestAutomatically (group) {
   // If all members are either true (accepted) or false (rejected) return true
   // If any member is null/undefined (undecided) return false
   return _.every(group.quest.members, _.isBoolean);
@@ -36,15 +40,15 @@ function canStartQuestAutomatically (group)  {
  * The quest leader can use this route.
  */
 
-let api = {};
+const api = {};
 
 /**
- * @api {post} /api/v3/groups/:groupId/quests/invite Invite users to a quest
+ * @api {post} /api/v3/groups/:groupId/quests/invite/:questKey Invite users to a quest
  * @apiName InviteToQuest
  * @apiGroup Quest
  *
- * @apiParam {String} groupId The group _id (or 'party')
- * @apiParam {String} questKey
+ * @apiParam (Path) {String} groupId The group _id (or 'party')
+ * @apiParam (Path) {String} questKey
  *
  * @apiSuccess {Object} data Quest object
  *
@@ -56,30 +60,29 @@ api.inviteToQuest = {
   url: '/groups/:groupId/quests/invite/:questKey',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let questKey = req.params.questKey;
-    let quest = questScrolls[questKey];
+    const { user } = res.locals;
+    const { questKey } = req.params;
+    const quest = questScrolls[questKey];
 
-    req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
+    req.checkParams('groupId', apiError('groupIdRequired')).notEmpty();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let group = await Group.getGroup({user, groupId: req.params.groupId, fields: 'type quest chat'});
+    const group = await Group.getGroup({ user, groupId: req.params.groupId, fields: basicGroupFields.concat(' quest chat') });
 
     if (!group) throw new NotFound(res.t('groupNotFound'));
     if (group.type !== 'party') throw new NotAuthorized(res.t('guildQuestsNotSupported'));
-    if (!quest) throw new NotFound(res.t('questNotFound', { key: questKey }));
+    if (!quest) throw new NotFound(apiError('questNotFound', { key: questKey }));
     if (!user.items.quests[questKey]) throw new NotAuthorized(res.t('questNotOwned'));
-    if (user.stats.lvl < quest.lvl) throw new NotAuthorized(res.t('questLevelTooHigh', { level: quest.lvl }));
     if (group.quest.key) throw new NotAuthorized(res.t('questAlreadyUnderway'));
 
-    let members = await User.find({
+    const members = await User.find({
       'party._id': group._id,
-      _id: {$ne: user._id},
+      _id: { $ne: user._id },
     })
-    .select('auth.facebook auth.local preferences.emailNotifications profile.name pushDevices')
-    .exec();
+      .select('auth preferences.emailNotifications preferences.pushNotifications preferences.language profile.name pushDevices webhooks')
+      .exec();
 
     group.markModified('quest');
     group.quest.key = questKey;
@@ -92,15 +95,15 @@ api.inviteToQuest = {
 
     await User.update({
       'party._id': group._id,
-      _id: {$ne: user._id},
+      _id: { $ne: user._id },
     }, {
       $set: {
         'party.quest.RSVPNeeded': true,
         'party.quest.key': questKey,
       },
-    }, {multi: true}).exec();
+    }, { multi: true }).exec();
 
-    _.each(members, (member) => {
+    _.each(members, member => {
       group.quest.members[member._id] = null;
     });
 
@@ -108,7 +111,7 @@ api.inviteToQuest = {
       await group.startQuest(user);
     }
 
-    let [savedGroup] = await Bluebird.all([
+    const [savedGroup] = await Promise.all([
       group.save(),
       user.save(),
     ]);
@@ -116,28 +119,34 @@ api.inviteToQuest = {
     res.respond(200, savedGroup.quest);
 
     // send out invites
-    let inviterVars = getUserInfo(user, ['name', 'email']);
-    let membersToEmail = members.filter(member => {
+    const inviterVars = getUserInfo(user, ['name', 'email']);
+    const membersToEmail = members.filter(member => {
       // send push notifications while filtering members before sending emails
       if (member.preferences.pushNotifications.invitedQuest !== false) {
         sendPushNotification(
           member,
           {
-            title: res.t('questInvitationTitle'),
-            message: res.t('questInvitationInfo', {quest: quest.text(req.language)}),
+            title: quest.text(member.preferences.language),
+            message: res.t('questInvitationNotificationInfo', member.preferences.language),
             identifier: 'questInvitation',
             category: 'questInvitation',
-          }
-
+          },
         );
       }
+
+      // Send webhooks
+      questActivityWebhook.send(member, {
+        type: 'questInvited',
+        group,
+        quest,
+      });
 
       return member.preferences.emailNotifications.invitedQuest !== false;
     });
     sendTxnEmail(membersToEmail, `invite-${quest.boss ? 'boss' : 'collection'}-quest`, [
-      {name: 'QUEST_NAME', content: quest.text()},
-      {name: 'INVITER', content: inviterVars.name},
-      {name: 'PARTY_URL', content: '/#/options/groups/party'},
+      { name: 'QUEST_NAME', content: quest.text() },
+      { name: 'INVITER', content: inviterVars.name },
+      { name: 'PARTY_URL', content: '/party' },
     ]);
 
     // track that the inviting user has accepted the quest
@@ -149,7 +158,7 @@ api.inviteToQuest = {
       questName: questKey,
       uuid: user._id,
       headers: req.headers,
-    });
+    }, true);
   },
 };
 
@@ -158,7 +167,7 @@ api.inviteToQuest = {
  * @apiName AcceptQuest
  * @apiGroup Quest
  *
- * @apiParam {String} groupId The group _id (or 'party')
+ * @apiParam (Path) {String} groupId The group _id (or 'party')
  *
  * @apiSuccess {Object} data Quest Object
  *
@@ -170,32 +179,34 @@ api.acceptQuest = {
   url: '/groups/:groupId/quests/accept',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
-    req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
+    req.checkParams('groupId', apiError('groupIdRequired')).notEmpty();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    user.party.quest.RSVPNeeded = false;
-    await user.save();
-
-    let group = await Group.getGroup({user, groupId: req.params.groupId, fields: 'type quest chat'});
+    const group = await Group.getGroup({ user, groupId: req.params.groupId, fields: basicGroupFields.concat(' quest chat') });
 
     if (!group) throw new NotFound(res.t('groupNotFound'));
     if (group.type !== 'party') throw new NotAuthorized(res.t('guildQuestsNotSupported'));
     if (!group.quest.key) throw new NotFound(res.t('questInviteNotFound'));
-    if (group.quest.active) throw new NotAuthorized(res.t('questAlreadyUnderway'));
+    if (group.quest.active) throw new NotAuthorized(res.t('questAlreadyStartedFriendly'));
     if (group.quest.members[user._id]) throw new BadRequest(res.t('questAlreadyAccepted'));
 
-    group.markModified('quest');
-    group.quest.members[user._id] = true;
+    const acceptedSuccessfully = await group.handleQuestInvitation(user, true);
+    if (!acceptedSuccessfully) {
+      throw new NotAuthorized(res.t('questAlreadyAccepted'));
+    }
+
+    user.party.quest.RSVPNeeded = false;
+    await user.save();
 
     if (canStartQuestAutomatically(group)) {
       await group.startQuest(user);
     }
 
-    let savedGroup = await group.save();
+    const savedGroup = await group.save();
 
     res.respond(200, savedGroup.quest);
 
@@ -208,7 +219,7 @@ api.acceptQuest = {
       questName: group.quest.key,
       uuid: user._id,
       headers: req.headers,
-    });
+    }, true);
   },
 };
 
@@ -217,7 +228,7 @@ api.acceptQuest = {
  * @apiName RejectQuest
  * @apiGroup Quest
  *
- * @apiParam {String} groupId The group _id (or 'party')
+ * @apiParam (Path) {String} groupId The group _id (or 'party')
  *
  * @apiSuccess {Object} data Quest Object
  *
@@ -229,33 +240,35 @@ api.rejectQuest = {
   url: '/groups/:groupId/quests/reject',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
-    req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
+    req.checkParams('groupId', apiError('groupIdRequired')).notEmpty();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    user.party.quest = Group.cleanQuestProgress();
-    user.markModified('party.quest');
-    await user.save();
-
-    let group = await Group.getGroup({user, groupId: req.params.groupId, fields: 'type quest chat'});
+    const group = await Group.getGroup({ user, groupId: req.params.groupId, fields: basicGroupFields.concat(' quest chat') });
     if (!group) throw new NotFound(res.t('groupNotFound'));
     if (group.type !== 'party') throw new NotAuthorized(res.t('guildQuestsNotSupported'));
     if (!group.quest.key) throw new NotFound(res.t('questInvitationDoesNotExist'));
-    if (group.quest.active) throw new NotAuthorized(res.t('questAlreadyUnderway'));
+    if (group.quest.active) throw new NotAuthorized(res.t('questAlreadyStartedFriendly'));
     if (group.quest.members[user._id]) throw new BadRequest(res.t('questAlreadyAccepted'));
     if (group.quest.members[user._id] === false) throw new BadRequest(res.t('questAlreadyRejected'));
 
-    group.quest.members[user._id] = false;
-    group.markModified('quest.members');
+    const rejectedSuccessfully = await group.handleQuestInvitation(user, false);
+    if (!rejectedSuccessfully) {
+      throw new NotAuthorized(res.t('questAlreadyRejected'));
+    }
+
+    user.party.quest = Group.cleanQuestUser(user.party.quest.progress);
+    user.markModified('party.quest');
+    await user.save();
 
     if (canStartQuestAutomatically(group)) {
       await group.startQuest(user);
     }
 
-    let savedGroup = await group.save();
+    const savedGroup = await group.save();
 
     res.respond(200, savedGroup.quest);
 
@@ -267,17 +280,16 @@ api.rejectQuest = {
       questName: group.quest.key,
       uuid: user._id,
       headers: req.headers,
-    });
+    }, true);
   },
 };
-
 
 /**
  * @api {post} /api/v3/groups/:groupId/quests/force-start Force-start a pending quest
  * @apiName ForceQuestStart
  * @apiGroup Quest
  *
- * @apiParam {String} groupId The group _id (or 'party')
+ * @apiParam (Path) {String} groupId The group _id (or 'party')
  *
  * @apiSuccess {Object} data Quest Object
  *
@@ -292,26 +304,28 @@ api.forceStart = {
   url: '/groups/:groupId/quests/force-start',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
-    req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
+    req.checkParams('groupId', apiError('groupIdRequired')).notEmpty();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let group = await Group.getGroup({user, groupId: req.params.groupId, fields: 'type quest leader chat'});
+    const group = await Group.getGroup({ user, groupId: req.params.groupId, fields: basicGroupFields.concat(' quest chat') });
 
     if (!group) throw new NotFound(res.t('groupNotFound'));
     if (group.type !== 'party') throw new NotAuthorized(res.t('guildQuestsNotSupported'));
     if (!group.quest.key) throw new NotFound(res.t('questNotPending'));
-    if (group.quest.active) throw new NotAuthorized(res.t('questAlreadyUnderway'));
-    if (!(user._id === group.quest.leader || user._id === group.leader)) throw new NotAuthorized(res.t('questOrGroupLeaderOnlyStartQuest'));
+    if (group.quest.active) throw new NotAuthorized(res.t('questAlreadyStarted'));
+    if (!(user._id === group.quest.leader || user._id === group.leader)) {
+      throw new NotAuthorized(res.t('questOrGroupLeaderOnlyStartQuest'));
+    }
 
     group.markModified('quest');
 
     await group.startQuest(user);
 
-    let [savedGroup] = await Bluebird.all([
+    const [savedGroup] = await Promise.all([
       group.save(),
       user.save(),
     ]);
@@ -326,7 +340,7 @@ api.forceStart = {
       questName: group.quest.key,
       uuid: user._id,
       headers: req.headers,
-    });
+    }, true);
   },
 };
 
@@ -335,7 +349,7 @@ api.forceStart = {
  * @apiName CancelQuest
  * @apiGroup Quest
  *
- * @apiParam {String} groupId The group _id (or 'party')
+ * @apiParam (Path) {String} groupId The group _id (or 'party')
  *
  * @apiSuccess {Object} data Quest Object
  *
@@ -352,31 +366,46 @@ api.cancelQuest = {
   async handler (req, res) {
     // Cancel a quest BEFORE it has begun (i.e., in the invitation stage)
     // Quest scroll has not yet left quest owner's inventory so no need to return it.
-    // Do not wipe quest progress for members because they'll want it to be applied to the next quest that's started.
-    let user = res.locals.user;
-    let groupId = req.params.groupId;
+    // Do not wipe quest progress for members because they'll
+    // want it to be applied to the next quest that's started.
+    const { user } = res.locals;
+    const { groupId } = req.params;
 
-    req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
+    req.checkParams('groupId', apiError('groupIdRequired')).notEmpty();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let group = await Group.getGroup({user, groupId, fields: 'type leader quest'});
+    const group = await Group.getGroup({ user, groupId, fields: basicGroupFields.concat(' quest') });
+
     if (!group) throw new NotFound(res.t('groupNotFound'));
     if (group.type !== 'party') throw new NotAuthorized(res.t('guildQuestsNotSupported'));
     if (!group.quest.key) throw new NotFound(res.t('questInvitationDoesNotExist'));
-    if (user._id !== group.leader && group.quest.leader !== user._id) throw new NotAuthorized(res.t('onlyLeaderCancelQuest'));
+    if (user._id !== group.leader && group.quest.leader !== user._id) {
+      throw new NotAuthorized(res.t('onlyLeaderCancelQuest'));
+    }
     if (group.quest.active) throw new NotAuthorized(res.t('cantCancelActiveQuest'));
+
+    const questName = questScrolls[group.quest.key].text('en');
+    const newChatMessage = group.sendChat({
+      message: `\`${user.profile.name} cancelled the party quest ${questName}.\``,
+      info: {
+        type: 'quest_cancel',
+        user: user.profile.name,
+        quest: group.quest.key,
+      },
+    });
 
     group.quest = Group.cleanGroupQuest();
     group.markModified('quest');
 
-    let [savedGroup] = await Bluebird.all([
+    const [savedGroup] = await Promise.all([
       group.save(),
+      newChatMessage.save(),
       User.update(
-        {'party._id': groupId},
-        {$set: {'party.quest': Group.cleanQuestProgress()}},
-        {multi: true}
+        { 'party._id': groupId },
+        Group.cleanQuestParty(),
+        { multi: true },
       ).exec(),
     ]);
 
@@ -389,7 +418,7 @@ api.cancelQuest = {
  * @apiName AbortQuest
  * @apiGroup Quest
  *
- * @apiParam {String} groupId The group _id (or 'party')
+ * @apiParam (Path) {String} groupId The group _id (or 'party')
  *
  * @apiSuccess {Object} data Quest Object
  *
@@ -404,32 +433,39 @@ api.abortQuest = {
   url: '/groups/:groupId/quests/abort',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    // Abort a quest AFTER it has begun (see questCancel for BEFORE)
-    let user = res.locals.user;
-    let groupId = req.params.groupId;
+    // Abort a quest AFTER it has begun
+    const { user } = res.locals;
+    const { groupId } = req.params;
 
-    req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
+    req.checkParams('groupId', apiError('groupIdRequired')).notEmpty();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let group = await Group.getGroup({user, groupId, fields: 'type quest leader chat'});
+    const group = await Group.getGroup({ user, groupId, fields: basicGroupFields.concat(' quest chat') });
 
     if (!group) throw new NotFound(res.t('groupNotFound'));
     if (group.type !== 'party') throw new NotAuthorized(res.t('guildQuestsNotSupported'));
     if (!group.quest.active) throw new NotFound(res.t('noActiveQuestToAbort'));
     if (user._id !== group.leader && user._id !== group.quest.leader) throw new NotAuthorized(res.t('onlyLeaderAbortQuest'));
 
-    let questName = questScrolls[group.quest.key].text('en');
-    group.sendChat(`\`${user.profile.name} aborted the party quest ${questName}.\``);
+    const questName = questScrolls[group.quest.key].text('en');
+    const newChatMessage = group.sendChat({
+      message: `\`${common.i18n.t('chatQuestAborted', { username: user.profile.name, questName }, 'en')}\``,
+      info: {
+        type: 'quest_abort',
+        user: user.profile.name,
+        quest: group.quest.key,
+      },
+    });
+    await newChatMessage.save();
 
-    let memberUpdates = User.update({
+    const memberUpdates = User.update({
       'party._id': groupId,
-    }, {
-      $set: {'party.quest': Group.cleanQuestProgress()},
-    }, {multi: true}).exec();
+    }, Group.cleanQuestParty(),
+    { multi: true }).exec();
 
-    let questLeaderUpdate = User.update({
+    const questLeaderUpdate = User.update({
       _id: group.quest.leader,
     }, {
       $inc: {
@@ -440,7 +476,7 @@ api.abortQuest = {
     group.quest = Group.cleanGroupQuest();
     group.markModified('quest');
 
-    let [groupSaved] = await Bluebird.all([group.save(), memberUpdates, questLeaderUpdate]);
+    const [groupSaved] = await Promise.all([group.save(), memberUpdates, questLeaderUpdate]);
 
     res.respond(200, groupSaved.quest);
   },
@@ -451,7 +487,7 @@ api.abortQuest = {
  * @apiName LeaveQuest
  * @apiGroup Quest
  *
- * @apiParam {String} groupId The group _id (or 'party')
+ * @apiParam (Path) {String} groupId The group _id (or 'party')
  *
  * @apiSuccess {Object} data Quest Object
  *
@@ -463,15 +499,15 @@ api.leaveQuest = {
   url: '/groups/:groupId/quests/leave',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let groupId = req.params.groupId;
+    const { user } = res.locals;
+    const { groupId } = req.params;
 
-    req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
+    req.checkParams('groupId', apiError('groupIdRequired')).notEmpty();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let group = await Group.getGroup({user, groupId, fields: 'type quest'});
+    const group = await Group.getGroup({ user, groupId, fields: basicGroupFields.concat(' quest') });
 
     if (!group) throw new NotFound(res.t('groupNotFound'));
     if (group.type !== 'party') throw new NotAuthorized(res.t('guildQuestsNotSupported'));
@@ -482,10 +518,10 @@ api.leaveQuest = {
     group.quest.members[user._id] = false;
     group.markModified('quest.members');
 
-    user.party.quest = Group.cleanQuestProgress();
+    user.party.quest = Group.cleanQuestUser(user.party.quest.progress);
     user.markModified('party.quest');
 
-    let [savedGroup] = await Bluebird.all([
+    const [savedGroup] = await Promise.all([
       group.save(),
       user.save(),
     ]);
@@ -494,4 +530,4 @@ api.leaveQuest = {
   },
 };
 
-module.exports = api;
+export default api;

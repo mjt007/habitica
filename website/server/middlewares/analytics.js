@@ -1,23 +1,11 @@
-import nconf from 'nconf';
 import {
- track,
- trackPurchase,
- mockAnalyticsService,
+  getAnalyticsServiceByEnvironment,
 } from '../libs/analyticsService';
 
-let service;
+const service = getAnalyticsServiceByEnvironment();
 
-if (nconf.get('IS_PROD')) {
-  service = {
-    track,
-    trackPurchase,
-  };
-} else {
-  service = mockAnalyticsService;
-}
-
-module.exports = function attachAnalytics (req, res, next) {
+export default function attachAnalytics (req, res, next) {
   res.analytics = service;
 
   next();
-};
+}

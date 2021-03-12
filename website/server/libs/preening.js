@@ -2,18 +2,24 @@ import _ from 'lodash';
 import moment from 'moment';
 
 // Aggregate entries
-function _aggregate (history, aggregateBy) {
+function _aggregate (history, aggregateBy, timezoneUtcOffset, dayStart) {
   return _.chain(history)
     .groupBy(entry => { // group entries by aggregateBy
-      return moment(entry.date).format(aggregateBy);
+      const entryDate = moment(entry.date).utcOffset(timezoneUtcOffset);
+      if (entryDate.hour() < dayStart) entryDate.subtract(1, 'day');
+      return entryDate.format(aggregateBy);
     })
-    .sortBy((entry, key) => key) // sort by date
-    .map(entries => {
+    .toPairs() // [key, entry]
+    .sortBy(([key]) => key) // sort by date
+    .map(keyEntryPair => {
+      const entries = keyEntryPair[1]; // 1 is entry, 0 is key
       return {
         date: Number(entries[0].date),
-        value: _.reduce(entries, (previousValue, entry) => {
-          return previousValue + entry.value;
-        }, 0) / entries.length,
+        value: _.reduce(
+          entries,
+          (previousValue, entry) => previousValue + entry.value,
+          0,
+        ) / entries.length,
       };
     })
     .value();
@@ -29,40 +35,45 @@ Subscribers and challenges:
 - 1 value each month for the previous 12 months
 - 1 value each year for the previous years
  */
-export function preenHistory (history, isSubscribed, timezoneOffset) {
+export function preenHistory (history, isSubscribed, timezoneUtcOffset = 0, dayStart = 0) {
   // history = _.filter(history, historyEntry => Boolean(historyEntry)); // Filter missing entries
-  let now = timezoneOffset ? moment().zone(timezoneOffset) : moment();
+  const now = moment().utcOffset(timezoneUtcOffset);
   // Date after which to begin compressing data
-  let cutOff = now.subtract(isSubscribed ? 365 : 60, 'days').startOf('day');
+  const cutOff = now.subtract(isSubscribed ? 365 : 60, 'days').startOf('day');
 
   // Keep uncompressed entries (modifies history and returns removed items)
-  let newHistory = _.remove(history, entry => {
-    let date = moment(entry.date);
-    return date.isSame(cutOff) || date.isAfter(cutOff);
+  const newHistory = _.remove(history, entry => {
+    if (!entry) return true; // sometimes entries are `null`
+    const entryDate = moment(entry.date).utcOffset(timezoneUtcOffset);
+    if (entryDate.hour() < dayStart) entryDate.subtract(1, 'day');
+    return entryDate.isSame(cutOff) || entryDate.isAfter(cutOff);
   });
 
   // Date after which to begin compressing data by year
-  let monthsCutOff = cutOff.subtract(isSubscribed ? 12 : 10, 'months').startOf('day');
-  let aggregateByMonth = _.remove(history, entry => {
-    let date = moment(entry.date);
-    return date.isSame(monthsCutOff) || date.isAfter(monthsCutOff);
+  const monthsCutOff = cutOff.subtract(isSubscribed ? 12 : 10, 'months').startOf('day');
+  const aggregateByMonth = _.remove(history, entry => {
+    if (!entry) return true; // sometimes entries are `null`
+    const entryDate = moment(entry.date).utcOffset(timezoneUtcOffset);
+    if (entryDate.hour() < dayStart) entryDate.subtract(1, 'day');
+    return entryDate.isSame(monthsCutOff) || entryDate.isAfter(monthsCutOff);
   });
   // Aggregate remaining entries by month and year
-  if (aggregateByMonth.length > 0) newHistory.unshift(..._aggregate(aggregateByMonth, 'YYYYMM'));
-  if (history.length > 0) newHistory.unshift(..._aggregate(history, 'YYYY'));
+  if (aggregateByMonth.length > 0) newHistory.unshift(..._aggregate(aggregateByMonth, 'YYYYMM', timezoneUtcOffset, dayStart));
+  if (history.length > 0) newHistory.unshift(..._aggregate(history, 'YYYY', timezoneUtcOffset, dayStart));
 
   return newHistory;
 }
 
 // Preen history for users and tasks.
 export function preenUserHistory (user, tasksByType) {
-  let isSubscribed = user.isSubscribed();
-  let timezoneOffset = user.preferences.timezoneOffset;
-  let minHistoryLength = isSubscribed ? 365 : 60;
+  const isSubscribed = user.isSubscribed();
+  const timezoneUtcOffset = user.getUtcOffset();
+  const { dayStart } = user.preferences;
+  const minHistoryLength = isSubscribed ? 365 : 60;
 
   function _processTask (task) {
     if (task.history && task.history.length > minHistoryLength) {
-      task.history = preenHistory(task.history, isSubscribed, timezoneOffset);
+      task.history = preenHistory(task.history, isSubscribed, timezoneUtcOffset, dayStart);
       task.markModified('history');
     }
   }
@@ -71,12 +82,14 @@ export function preenUserHistory (user, tasksByType) {
   tasksByType.dailys.forEach(_processTask);
 
   if (user.history.exp.length > minHistoryLength) {
-    user.history.exp = preenHistory(user.history.exp, isSubscribed, timezoneOffset);
+    user.history.exp = preenHistory(user.history.exp, isSubscribed, timezoneUtcOffset, dayStart);
     user.markModified('history.exp');
   }
 
   if (user.history.todos.length > minHistoryLength) {
-    user.history.todos = preenHistory(user.history.todos, isSubscribed, timezoneOffset);
+    user.history.todos = preenHistory(
+      user.history.todos, isSubscribed, timezoneUtcOffset, dayStart,
+    );
     user.markModified('history.todos');
   }
 }

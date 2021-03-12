@@ -1,9 +1,9 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   createAndPopulateGroup,
   translate as t,
   generateUser,
-} from '../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
+} from '../../../../helpers/api-integration/v3';
 import { model as Group } from '../../../../../website/server/models/group';
 
 describe('POST /groups/:groupId/quests/abort', () => {
@@ -15,7 +15,7 @@ describe('POST /groups/:groupId/quests/abort', () => {
   const PET_QUEST = 'whale';
 
   beforeEach(async () => {
-    let { group, groupLeader, members } = await createAndPopulateGroup({
+    const { group, groupLeader, members } = await createAndPopulateGroup({
       groupDetails: { type: 'party', privacy: 'private' },
       members: 2,
     });
@@ -42,24 +42,24 @@ describe('POST /groups/:groupId/quests/abort', () => {
 
     it('returns an error for a group in which user is not a member', async () => {
       await expect(user.post(`/groups/${questingGroup._id}/quests/abort`))
-      .to.eventually.be.rejected.and.eql({
-        code: 404,
-        error: 'NotFound',
-        message: t('groupNotFound'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 404,
+          error: 'NotFound',
+          message: t('groupNotFound'),
+        });
     });
 
     it('returns an error when group is a guild', async () => {
-      let { group: guild, groupLeader: guildLeader } = await createAndPopulateGroup({
+      const { group: guild, groupLeader: guildLeader } = await createAndPopulateGroup({
         groupDetails: { type: 'guild', privacy: 'private' },
       });
 
       await expect(guildLeader.post(`/groups/${guild._id}/quests/abort`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('guildQuestsNotSupported'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 401,
+          error: 'NotAuthorized',
+          message: t('guildQuestsNotSupported'),
+        });
     });
 
     it('returns an error when quest is not active', async () => {
@@ -90,9 +90,9 @@ describe('POST /groups/:groupId/quests/abort', () => {
     await partyMembers[0].post(`/groups/${questingGroup._id}/quests/accept`);
     await partyMembers[1].post(`/groups/${questingGroup._id}/quests/accept`);
 
-    let stub = sandbox.stub(Group.prototype, 'sendChat');
+    const stub = sandbox.spy(Group.prototype, 'sendChat');
 
-    let res = await leader.post(`/groups/${questingGroup._id}/quests/abort`);
+    const res = await leader.post(`/groups/${questingGroup._id}/quests/abort`);
     await Promise.all([
       leader.sync(),
       questingGroup.sync(),
@@ -100,7 +100,7 @@ describe('POST /groups/:groupId/quests/abort', () => {
       partyMembers[1].sync(),
     ]);
 
-    let cleanUserQuestObj = {
+    const cleanUserQuestObj = {
       key: null,
       progress: {
         up: 0,
@@ -127,7 +127,13 @@ describe('POST /groups/:groupId/quests/abort', () => {
       members: {},
     });
     expect(Group.prototype.sendChat).to.be.calledOnce;
-    expect(Group.prototype.sendChat).to.be.calledWithMatch(/aborted the party quest Wail of the Whale.`/);
+    expect(Group.prototype.sendChat).to.be.calledWithMatch({
+      message: sinon.match(/aborted the party quest Wail of the Whale.`/),
+      info: {
+        quest: 'whale',
+        type: 'quest_abort',
+      },
+    });
 
     stub.restore();
   });

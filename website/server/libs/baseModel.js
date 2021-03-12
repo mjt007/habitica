@@ -1,15 +1,18 @@
 import { v4 as uuid } from 'uuid';
 import validator from 'validator';
-import objectPath from 'object-path'; // TODO use lodash's unset once v4 is out
 import _ from 'lodash';
 
-module.exports = function baseModel (schema, options = {}) {
+export default function baseModel (schema, options = {}) {
+  if (schema.options.typeKey !== '$type') {
+    throw new Error('Every schema must use $type as the typeKey, see https://mongoosejs.com/docs/guide.html#typeKey');
+  }
+
   if (options._id !== false) {
     schema.add({
       _id: {
-        type: String,
+        $type: String,
         default: uuid,
-        validate: [validator.isUUID, 'Invalid uuid.'],
+        validate: [v => validator.isUUID(v), 'Invalid uuid in baseModel.'],
       },
     });
   }
@@ -17,11 +20,11 @@ module.exports = function baseModel (schema, options = {}) {
   if (options.timestamps) {
     schema.add({
       createdAt: {
-        type: Date,
+        $type: Date,
         default: Date.now,
       },
       updatedAt: {
-        type: Date,
+        $type: Date,
         default: Date.now,
       },
     });
@@ -38,14 +41,14 @@ module.exports = function baseModel (schema, options = {}) {
     });
   }
 
-  let noSetFields = ['createdAt', 'updatedAt'];
-  let privateFields = ['__v'];
+  const noSetFields = ['createdAt', 'updatedAt'];
+  const privateFields = ['__v'];
 
   if (Array.isArray(options.noSet)) noSetFields.push(...options.noSet);
   // This method accepts an additional array of fields to be sanitized that can be passed at runtime
   schema.statics.sanitize = function sanitize (objToSanitize = {}, additionalFields = []) {
-    noSetFields.concat(additionalFields).forEach((fieldPath) => {
-      objectPath.del(objToSanitize, fieldPath);
+    noSetFields.concat(additionalFields).forEach(fieldPath => {
+      _.unset(objToSanitize, fieldPath);
     });
 
     // Allow a sanitize transform function to be used
@@ -56,8 +59,8 @@ module.exports = function baseModel (schema, options = {}) {
 
   if (!schema.options.toJSON) schema.options.toJSON = {};
   schema.options.toJSON.transform = function transformToObject (doc, plainObj) {
-    privateFields.forEach((fieldPath) => {
-      objectPath.del(plainObj, fieldPath);
+    privateFields.forEach(fieldPath => {
+      _.unset(plainObj, fieldPath);
     });
 
     // Always return `id`
@@ -76,4 +79,4 @@ module.exports = function baseModel (schema, options = {}) {
       return result;
     }, {});
   };
-};
+}

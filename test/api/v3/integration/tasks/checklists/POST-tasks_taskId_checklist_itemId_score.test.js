@@ -1,8 +1,10 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
   translate as t,
+  server,
+  sleep,
 } from '../../../../../helpers/api-integration/v3';
-import { v4 as generateUUID } from 'uuid';
 
 describe('POST /tasks/:taskId/checklist/:itemId/score', () => {
   let user;
@@ -12,7 +14,7 @@ describe('POST /tasks/:taskId/checklist/:itemId/score', () => {
   });
 
   it('scores a checklist item', async () => {
-    let task = await user.post('/tasks/user', {
+    const task = await user.post('/tasks/user', {
       type: 'daily',
       text: 'Daily with checklist',
     });
@@ -29,7 +31,7 @@ describe('POST /tasks/:taskId/checklist/:itemId/score', () => {
   });
 
   it('can use a alias to score a checklist item', async () => {
-    let task = await user.post('/tasks/user', {
+    const task = await user.post('/tasks/user', {
       type: 'daily',
       text: 'Daily with checklist',
       alias: 'daily-with-shortname',
@@ -47,7 +49,7 @@ describe('POST /tasks/:taskId/checklist/:itemId/score', () => {
   });
 
   it('fails on habits', async () => {
-    let habit = await user.post('/tasks/user', {
+    const habit = await user.post('/tasks/user', {
       type: 'habit',
       text: 'habit with checklist',
     });
@@ -62,7 +64,7 @@ describe('POST /tasks/:taskId/checklist/:itemId/score', () => {
   });
 
   it('fails on rewards', async () => {
-    let reward = await user.post('/tasks/user', {
+    const reward = await user.post('/tasks/user', {
       type: 'reward',
       text: 'reward with checklist',
     });
@@ -83,7 +85,7 @@ describe('POST /tasks/:taskId/checklist/:itemId/score', () => {
   });
 
   it('fails on checklist item not found', async () => {
-    let createdTask = await user.post('/tasks/user', {
+    const createdTask = await user.post('/tasks/user', {
       type: 'daily',
       text: 'daily with checklist',
     });
@@ -92,6 +94,51 @@ describe('POST /tasks/:taskId/checklist/:itemId/score', () => {
       code: 404,
       error: 'NotFound',
       message: t('checklistItemNotFound'),
+    });
+  });
+
+  context('sending task activity webhooks', () => {
+    before(async () => {
+      await server.start();
+    });
+
+    after(async () => {
+      await server.close();
+    });
+
+    it('sends task activity webhooks', async () => {
+      const uuid = generateUUID();
+
+      await user.post('/user/webhook', {
+        url: `http://localhost:${server.port}/webhooks/${uuid}`,
+        type: 'taskActivity',
+        enabled: true,
+        options: {
+          checklistScored: true,
+          updated: false,
+        },
+      });
+
+      const task = await user.post('/tasks/user', {
+        text: 'test daily',
+        type: 'daily',
+      });
+
+      const updatedTask = await user.post(`/tasks/${task.id}/checklist`, {
+        text: 'checklist item text',
+      });
+
+      const checklistItem = updatedTask.checklist[0];
+
+      const scoredItemTask = await user.post(`/tasks/${task.id}/checklist/${checklistItem.id}/score`);
+
+      await sleep();
+
+      const body = server.getWebhookData(uuid);
+
+      expect(body.type).to.eql('checklistScored');
+      expect(body.task).to.eql(scoredItemTask);
+      expect(body.item).to.eql(scoredItemTask.checklist[0]);
     });
   });
 });

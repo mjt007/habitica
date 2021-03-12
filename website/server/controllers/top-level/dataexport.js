@@ -1,34 +1,32 @@
-import { authWithSession } from '../../middlewares/auth';
-import { model as User } from '../../models/user';
-import * as Tasks from '../../models/task';
-import {
-  NotFound,
-} from '../../libs/errors';
 import _ from 'lodash';
-import csvStringify from '../../libs/csvStringify';
 import moment from 'moment';
-import js2xml from 'js2xmlparser';
-import Pageres from 'pageres';
-import nconf from 'nconf';
-import got from 'got';
-import Bluebird from 'bluebird';
-import locals from '../../middlewares/locals';
+// import Pageres from 'pageres';
+// import nconf from 'nconf';
+// import got from 'got';
 import md from 'habitica-markdown';
-import {
+import csvStringify from '../../libs/csvStringify';
+import { marshallUserData } from '../../libs/xmlMarshaller';
+import { NotFound } from '../../libs/errors';
+import * as Tasks from '../../models/task';
+import * as inboxLib from '../../libs/inbox';
+// import { model as User } from '../../models/user';
+import { authWithSession } from '../../middlewares/auth';
+/* import {
   S3,
-} from '../../libs/aws';
+} from '../../libs/aws'; */
 
-const S3_BUCKET = nconf.get('S3:bucket');
+// const S3_BUCKET = nconf.get('S3_BUCKET');
 
-const BASE_URL = nconf.get('BASE_URL');
+// const BASE_URL = nconf.get('BASE_URL');
 
-let api = {};
+const api = {};
 
 /**
  * @apiDefine DataExport Data Export
  * These routes allow you to download backups of your data.
  *
- * **Note:** They are intented to be used on the website only and as such are part of the private API and may change at any time.
+ * **Note:** They are intended to be used on the website only and as such are part
+ * of the private API and may change at any time.
  */
 
 /**
@@ -50,14 +48,14 @@ api.exportUserHistory = {
   url: '/export/history.csv',
   middlewares: [authWithSession],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
-    let tasks = await Tasks.Task.find({
+    const tasks = await Tasks.Task.find({
       userId: user._id,
-      type: {$in: ['habit', 'daily']},
+      type: { $in: ['habit', 'daily'] },
     }).exec();
 
-    let output = [
+    const output = [
       ['Task Name', 'Task ID', 'Task Type', 'Date', 'Value'],
     ];
 
@@ -78,28 +76,35 @@ api.exportUserHistory = {
       'Content-disposition': 'attachment; filename=habitica-tasks-history.csv',
     });
 
-    let csvRes = await csvStringify(output);
+    const csvRes = await csvStringify(output);
     res.status(200).send(csvRes);
   },
 };
 
-// Convert user to json and attach tasks divided by type
+// Convert user to json and attach tasks divided by type and inbox messages
 // at user.tasks[`${taskType}s`] (user.tasks.{dailys/habits/...})
 async function _getUserDataForExport (user) {
-  let userData = user.toJSON();
+  const userData = user.toJSON();
   userData.tasks = {};
 
-  let tasks = await Tasks.Task.find({
-    userId: user._id,
-  }).exec();
+  userData.inbox.messages = {};
 
-  _.chain(tasks)
+  const [tasks, messages] = await Promise.all([
+    Tasks.Task.find({
+      userId: user._id,
+    }).exec(),
+
+    inboxLib.getUserInbox(user, { asArray: false }),
+  ]);
+
+  userData.inbox.messages = messages;
+
+  _(tasks)
     .map(task => task.toJSON())
     .groupBy(task => task.type)
-    .each((tasksPerType, taskType) => {
+    .forEach((tasksPerType, taskType) => {
       userData.tasks[`${taskType}s`] = tasksPerType;
-    })
-    .value(); // to force evaluation
+    });
 
   return userData;
 }
@@ -116,13 +121,13 @@ api.exportUserDataJson = {
   url: '/export/userdata.json',
   middlewares: [authWithSession],
   async handler (req, res) {
-    let userData = await _getUserDataForExport(res.locals.user);
+    const userData = await _getUserDataForExport(res.locals.user);
 
     res.set({
       'Content-Type': 'application/json',
       'Content-disposition': 'attachment; filename=habitica-user-data.json',
     });
-    let jsonRes = JSON.stringify(userData);
+    const jsonRes = JSON.stringify(userData);
 
     res.status(200).send(jsonRes);
   },
@@ -131,6 +136,7 @@ api.exportUserDataJson = {
 /**
  * @api {get} /export/userdata.xml Export user data in XML format
  * @apiName ExportUserDataXml
+ * @apiDescription This XML export feature is not currently working (https://github.com/HabitRPG/habitica/issues/10100).
  * @apiGroup DataExport
  *
  * @apiSuccess {XML} File An xml file of the user object.
@@ -140,13 +146,14 @@ api.exportUserDataXml = {
   url: '/export/userdata.xml',
   middlewares: [authWithSession],
   async handler (req, res) {
-    let userData = await _getUserDataForExport(res.locals.user);
+    const userData = await _getUserDataForExport(res.locals.user);
+    const xmlData = marshallUserData(userData);
 
     res.set({
       'Content-Type': 'text/xml',
       'Content-disposition': 'attachment; filename=habitica-user-data.xml',
     });
-    res.status(200).send(js2xml('user', userData));
+    res.status(200).send(xmlData);
   },
 };
 
@@ -161,33 +168,40 @@ api.exportUserDataXml = {
  *
  * @apiUse UserNotFound
  */
+// @TODO fix
 api.exportUserAvatarHtml = {
   method: 'GET',
   url: '/export/avatar-:memberId.html',
-  middlewares: [locals],
-  async handler (req, res) {
-    req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
+  // middlewares: [locals],
+  async handler (/* req, res */) {
+    throw new NotFound('This API route is currently not available. See https://github.com/HabitRPG/habitica/issues/9489.');
 
-    let validationErrors = req.validationErrors();
+    /* req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
+
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let memberId = req.params.memberId;
-    let member = await User
+    const { memberId } = req.params;
+
+    throw new NotFound('This API route is currently not available. See https://github.com/HabitRPG/habitica/issues/9489.');
+
+    const member = await User
       .findById(memberId)
       .select('stats profile items achievements preferences backer contributor')
       .exec();
 
-    if (!member) throw new NotFound(res.t('userWithIDNotFound', {userId: memberId}));
+    if (!member) throw new NotFound(res.t('userWithIDNotFound', { userId: memberId }));
     res.render('avatar-static', {
       title: member.profile.name,
-      env: _.defaults({user: member}, res.locals.habitrpg),
-    });
+      env: _.defaults({ user: member }, res.locals.habitrpg),
+    }); */
   },
 };
 
 /**
  * @api {get} /export/avatar-:uuid.png Render a user avatar as a PNG file
  * @apiName ExportUserAvatarPng
+ * @apiDescription This PNG export feature is not currently working (https://github.com/HabitRPG/habitica/issues/9489).
  * @apiGroup DataExport
  *
  * @apiParam (Path) {String} uuid The User ID of the user
@@ -197,50 +211,54 @@ api.exportUserAvatarHtml = {
 api.exportUserAvatarPng = {
   method: 'GET',
   url: '/export/avatar-:memberId.png',
-  async handler (req, res) {
-    req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
+  async handler (/* req, res */) {
+    throw new NotFound('This API route is currently not available. See https://github.com/HabitRPG/habitica/issues/9489.');
 
-    let validationErrors = req.validationErrors();
+    /* req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
+
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let memberId = req.params.memberId;
+    const { memberId } = req.params;
 
-    let filename = `avatars/${memberId}.png`;
-    let s3url = `https://${S3_BUCKET}.s3.amazonaws.com/${filename}`;
+    const filename = `avatars/${memberId}.png`;
+    const s3url = `https://${S3_BUCKET}.s3.amazonaws.com/${filename}`;
 
     let response;
     try {
-      response = await got.head(s3url);
+      response = await got.head(s3url); // TODO add timeout and retries
     } catch (gotError) {
       // If the file does not exist AWS S3 can return a 403 error
-      if (gotError.code !== 'ENOTFOUND' && gotError.statusCode !== 404 && gotError.statusCode !== 403) {
+      if (gotError.code !== 'ENOTFOUND' && gotError.statusCode
+      !== 404 && gotError.statusCode !== 403) {
         throw gotError;
       }
     }
 
     // cache images for 30 minutes on aws, else upload a new one
-    if (response && response.statusCode === 200 && moment().diff(response.headers['last-modified'], 'minutes') < 30) {
+    if (response && response.statusCode === 200 && moment()
+    .diff(response.headers['last-modified'], 'minutes') < 30) {
       return res.redirect(s3url);
     }
 
-    let [stream] = await new Pageres()
-    .src(`${BASE_URL}/export/avatar-${memberId}.html`, ['140x147'], {
-      crop: true,
-      filename: filename.replace('.png', ''),
-    })
-    .run();
+    const pageBuffer = await new Pageres()
+      .src(`${BASE_URL}/export/avatar-${memberId}.html`, ['140x147'], {
+        crop: true,
+        filename: filename.replace('.png', ''),
+      })
+      .run();
 
-    let s3upload = S3.upload({
+    const s3upload = S3.upload({
       Bucket: S3_BUCKET,
       Key: filename,
       ACL: 'public-read',
       StorageClass: 'REDUCED_REDUNDANCY',
       ContentType: 'image/png',
-      Expires: moment().add({minutes: 5}).toDate(),
-      Body: stream,
+      Expires: moment().add({ minutes: 5 }).toDate(),
+      Body: pageBuffer,
     });
 
-    let s3res = await new Bluebird((resolve, reject) => {
+    const s3res = await new Promise((resolve, reject) => {
       s3upload.send((err, s3uploadRes) => {
         if (err) {
           reject(err);
@@ -250,13 +268,14 @@ api.exportUserAvatarPng = {
       });
     });
 
-    res.redirect(s3res.Location);
+    return res.redirect(s3res.Location); */
   },
 };
 
 /**
  * @api {get} /export/inbox.html Export user private messages as HTML document
  * @apiName ExportUserPrivateMessages
+ * @apiDescription This HTML export feature is not currently working (https://github.com/HabitRPG/habitica/issues/9489).
  * @apiGroup DataExport
  *
  * @apiSuccess {HTML} File An html page of the user's private messages.
@@ -266,31 +285,27 @@ api.exportUserPrivateMessages = {
   url: '/export/inbox.html',
   middlewares: [authWithSession],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
-    const timezoneOffset = user.preferences.timezoneOffset;
+    const timezoneUtcOffset = user.getUtcOffset();
     const dateFormat = user.preferences.dateFormat.toUpperCase();
     const TO = res.t('to');
     const FROM = res.t('from');
 
-    let inbox = Object.keys(user.inbox.messages).map(key => user.inbox.messages[key]);
-
-    inbox = _.sortBy(inbox, function sortBy (num) {
-      return num.sort * -1;
-    });
+    const inbox = await inboxLib.getUserInbox(user);
 
     let messages = '<!DOCTYPE html><html><head></head><body>';
 
     inbox.forEach((message, index) => {
-      let recipientLabel = message.sent ? TO : FROM;
-      let messageUser = message.user;
-      let timestamp = moment.utc(message.timestamp).zone(timezoneOffset).format(`${dateFormat} HH:mm:ss`);
-      let text = md.render(message.text);
-      index = `(${index + 1}/${inbox.length})`;
+      const recipientLabel = message.sent ? TO : FROM;
+      const messageUser = message.user;
+      const timestamp = moment.utc(message.timestamp).utcOffset(timezoneUtcOffset).format(`${dateFormat} HH:mm:ss`);
+      const text = md.render(message.text);
+      const pageIndex = `(${index + 1}/${inbox.length})`;
       messages += `
       <p>
         ${recipientLabel} <strong>${messageUser}</strong> ${timestamp}
-        ${index}
+        ${pageIndex}
         <br />
         ${text}
       </p>
@@ -308,4 +323,4 @@ api.exportUserPrivateMessages = {
   },
 };
 
-module.exports = api;
+export default api;

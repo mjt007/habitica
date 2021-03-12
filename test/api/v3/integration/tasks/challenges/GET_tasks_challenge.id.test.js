@@ -1,20 +1,20 @@
+import { v4 as generateUUID } from 'uuid';
+import { each } from 'lodash';
 import {
   generateUser,
   generateGroup,
   generateChallenge,
   translate as t,
 } from '../../../../../helpers/api-integration/v3';
-import { v4 as generateUUID } from 'uuid';
-import { each } from 'lodash';
 
 describe('GET /tasks/challenge/:challengeId', () => {
   let user;
   let guild;
   let challenge;
   let task;
-  let tasks = [];
+  const tasks = [];
   let challengeWithTask;
-  let tasksToTest = {
+  const tasksToTest = {
     habit: {
       text: 'test habit',
       type: 'habit',
@@ -42,10 +42,11 @@ describe('GET /tasks/challenge/:challengeId', () => {
     user = await generateUser();
     guild = await generateGroup(user);
     challenge = await generateChallenge(user, guild);
+    await user.post(`/challenges/${challenge._id}/join`);
   });
 
   it('returns error when challenge is not found', async () => {
-    let dummyId = generateUUID();
+    const dummyId = generateUUID();
 
     await expect(user.get(`/tasks/challenge/${dummyId}`)).to.eventually.be.rejected.and.eql({
       code: 404,
@@ -63,17 +64,17 @@ describe('GET /tasks/challenge/:challengeId', () => {
       });
 
       it('gets challenge tasks', async () => {
-        let getTask = await user.get(`/tasks/challenge/${challengeWithTask._id}`);
+        const getTask = await user.get(`/tasks/challenge/${challengeWithTask._id}`);
         expect(getTask).to.eql(tasks);
       });
 
       it('gets challenge tasks filtered by type', async () => {
-        let challengeTasks = await user.get(`/tasks/challenge/${challengeWithTask._id}?type=${task.type}s`);
+        const challengeTasks = await user.get(`/tasks/challenge/${challengeWithTask._id}?type=${task.type}s`);
         expect(challengeTasks).to.eql([task]);
       });
 
       it('cannot get a task owned by someone else', async () => {
-        let anotherUser = await generateUser();
+        const anotherUser = await generateUser();
 
         await expect(anotherUser.get(`/tasks/challenge/${challengeWithTask._id}`)).to.eventually.be.rejected.and.eql({
           code: 404,

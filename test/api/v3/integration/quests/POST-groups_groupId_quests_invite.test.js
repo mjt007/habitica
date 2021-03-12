@@ -1,10 +1,13 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   createAndPopulateGroup,
   translate as t,
+  server,
   sleep,
-} from '../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
-import { quests as questScrolls } from '../../../../../website/common/script/content';
+} from '../../../../helpers/api-integration/v3';
+import { quests as questScrolls } from '../../../../../website/common/script/content/quests';
+import { chatModel as Chat } from '../../../../../website/server/models/message';
+import apiError from '../../../../../website/server/libs/apiError';
 
 describe('POST /groups/:groupId/quests/invite/:questKey', () => {
   let questingGroup;
@@ -13,14 +16,14 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
   const PET_QUEST = 'whale';
 
   beforeEach(async () => {
-    let { group, groupLeader, members } = await createAndPopulateGroup({
+    const { group, groupLeader, members } = await createAndPopulateGroup({
       groupDetails: { type: 'party', privacy: 'private' },
       members: 1,
     });
 
     questingGroup = group;
     leader = groupLeader;
-    member = members[0];
+    member = members[0]; // eslint-disable-line prefer-destructuring
   });
 
   context('failure conditions', () => {
@@ -33,12 +36,12 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
     });
 
     it('does not issue invites for a group in which user is not a member', async () => {
-      let { group } = await createAndPopulateGroup({
+      const { group } = await createAndPopulateGroup({
         groupDetails: { type: 'party', privacy: 'private' },
         members: 1,
       });
 
-      let alternateGroup = group;
+      const alternateGroup = group;
 
       await expect(leader.post(`/groups/${alternateGroup._id}/quests/invite/${PET_QUEST}`)).to.eventually.be.rejected.and.eql({
         code: 404,
@@ -48,12 +51,12 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
     });
 
     it('does not issue invites for Guilds', async () => {
-      let { group } = await createAndPopulateGroup({
+      const { group } = await createAndPopulateGroup({
         groupDetails: { type: 'guild', privacy: 'public' },
         members: 1,
       });
 
-      let alternateGroup = group;
+      const alternateGroup = group;
 
       await expect(leader.post(`/groups/${alternateGroup._id}/quests/invite/${PET_QUEST}`)).to.eventually.be.rejected.and.eql({
         code: 401,
@@ -68,7 +71,7 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
       await expect(leader.post(`/groups/${questingGroup._id}/quests/invite/${FAKE_QUEST}`)).to.eventually.be.rejected.and.eql({
         code: 404,
         error: 'NotFound',
-        message: t('questNotFound', {key: FAKE_QUEST}),
+        message: apiError('questNotFound', { key: FAKE_QUEST }),
       });
     });
 
@@ -77,22 +80,6 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
         code: 401,
         error: 'NotAuthorized',
         message: t('questNotOwned'),
-      });
-    });
-
-    it('does not issue invites if the user is of insufficient Level', async () => {
-      const LEVELED_QUEST = 'atom1';
-      const LEVELED_QUEST_REQ = questScrolls[LEVELED_QUEST].lvl;
-      const leaderUpdate = {};
-      leaderUpdate[`items.quests.${LEVELED_QUEST}`] = 1;
-      leaderUpdate['stats.lvl'] = LEVELED_QUEST_REQ - 1;
-
-      await leader.update(leaderUpdate);
-
-      await expect(leader.post(`/groups/${questingGroup._id}/quests/invite/${LEVELED_QUEST}`)).to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('questLevelTooHigh', {level: LEVELED_QUEST_REQ}),
       });
     });
 
@@ -128,7 +115,7 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
 
       await questingGroup.sync();
 
-      let quest = questingGroup.quest;
+      const { quest } = questingGroup;
 
       expect(quest.key).to.eql(PET_QUEST);
       expect(quest.active).to.eql(false);
@@ -155,7 +142,7 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
     });
 
     it('sends back the quest object', async () => {
-      let inviteResponse = await leader.post(`/groups/${questingGroup._id}/quests/invite/${PET_QUEST}`);
+      const inviteResponse = await leader.post(`/groups/${questingGroup._id}/quests/invite/${PET_QUEST}`);
 
       expect(inviteResponse.key).to.eql(PET_QUEST);
       expect(inviteResponse.active).to.eql(false);
@@ -166,7 +153,7 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
     });
 
     it('allows non-party-leader party members to send invites', async () => {
-      let inviteResponse = await member.post(`/groups/${questingGroup._id}/quests/invite/${PET_QUEST}`);
+      const inviteResponse = await member.post(`/groups/${questingGroup._id}/quests/invite/${PET_QUEST}`);
 
       await questingGroup.sync();
 
@@ -175,9 +162,9 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
     });
 
     it('starts quest automatically if user is in a solo party', async () => {
-      let leaderDetails = { balance: 10 };
+      const leaderDetails = { balance: 10 };
       leaderDetails[`items.quests.${PET_QUEST}`] = 1;
-      let { group, groupLeader } = await createAndPopulateGroup({
+      const { group, groupLeader } = await createAndPopulateGroup({
         groupDetails: { type: 'party', privacy: 'private' },
         leaderDetails,
       });
@@ -190,23 +177,69 @@ describe('POST /groups/:groupId/quests/invite/:questKey', () => {
     });
 
     it('starts quest automatically if user is in a solo party and verifies chat', async () => {
-      let leaderDetails = { balance: 10 };
+      const leaderDetails = { balance: 10 };
       leaderDetails[`items.quests.${PET_QUEST}`] = 1;
-      let { group, groupLeader } = await createAndPopulateGroup({
+      const { group, groupLeader } = await createAndPopulateGroup({
         groupDetails: { type: 'party', privacy: 'private' },
         leaderDetails,
       });
 
       await groupLeader.post(`/groups/${group._id}/quests/invite/${PET_QUEST}`);
 
-      await group.sync();
+      const groupChat = await Chat.find({ groupId: group._id }).exec();
 
-      expect(group.chat[0].text).to.exist;
-      expect(group.chat[0]._meta).to.exist;
-      expect(group.chat[0]._meta).to.have.all.keys(['participatingMembers']);
+      expect(groupChat[0].text).to.exist;
+      expect(groupChat[0]._meta).to.exist;
+      expect(groupChat[0]._meta).to.have.all.keys(['participatingMembers']);
 
-      let returnedGroup = await groupLeader.get(`/groups/${group._id}`);
+      const returnedGroup = await groupLeader.get(`/groups/${group._id}`);
       expect(returnedGroup.chat[0]._meta).to.be.undefined;
+    });
+
+    it('successfully issues a quest invitation when quest level is higher than user level', async () => {
+      const LEVELED_QUEST = 'atom1';
+      const LEVELED_QUEST_REQ = questScrolls[LEVELED_QUEST].lvl;
+      const leaderUpdate = {};
+      leaderUpdate[`items.quests.${LEVELED_QUEST}`] = 1;
+      leaderUpdate['stats.lvl'] = LEVELED_QUEST_REQ - 1;
+
+      await leader.update(leaderUpdate);
+
+      await leader.post(`/groups/${questingGroup._id}/quests/invite/${LEVELED_QUEST}`);
+    });
+
+    context('sending quest activity webhooks', () => {
+      before(async () => {
+        await server.start();
+      });
+
+      after(async () => {
+        await server.close();
+      });
+
+      it('sends quest invited webhook', async () => {
+        const uuid = generateUUID();
+
+        await member.post('/user/webhook', {
+          url: `http://localhost:${server.port}/webhooks/${uuid}`,
+          type: 'questActivity',
+          enabled: true,
+          options: {
+            questInvited: true,
+          },
+        });
+
+        await leader.post(`/groups/${questingGroup._id}/quests/invite/${PET_QUEST}`);
+
+        await sleep();
+
+        const body = server.getWebhookData(uuid);
+
+        expect(body.type).to.eql('questInvited');
+        expect(body.group.id).to.eql(questingGroup.id);
+        expect(body.group.name).to.eql(questingGroup.name);
+        expect(body.quest.key).to.eql(PET_QUEST);
+      });
     });
   });
 });

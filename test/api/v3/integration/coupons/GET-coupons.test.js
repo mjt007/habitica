@@ -1,8 +1,8 @@
 import {
   generateUser,
-  translate as t,
   resetHabiticaDB,
-} from '../../../../helpers/api-v3-integration.helper';
+} from '../../../../helpers/api-integration/v3';
+import apiError from '../../../../../website/server/libs/apiError';
 
 describe('GET /coupons/', () => {
   let user;
@@ -19,7 +19,7 @@ describe('GET /coupons/', () => {
     await expect(user.get('/coupons')).to.eventually.be.rejected.and.eql({
       code: 401,
       error: 'NotAuthorized',
-      message: t('noSudoAccess'),
+      message: apiError('noSudoAccess'),
     });
   });
 
@@ -28,9 +28,9 @@ describe('GET /coupons/', () => {
       'contributor.sudo': true,
     });
 
-    let coupons = await user.post('/coupons/generate/wondercon?count=11');
-    let res = await user.get('/coupons');
-    let splitRes = res.split('\n');
+    const coupons = await user.post('/coupons/generate/wondercon?count=11');
+    const res = await user.get('/coupons');
+    const splitRes = res.split('\n');
 
     expect(splitRes.length).to.equal(13);
     expect(splitRes[0]).to.equal('code,event,date,user');

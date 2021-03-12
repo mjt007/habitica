@@ -1,11 +1,12 @@
 import {
   generateUser,
 } from '../../../../../helpers/api-integration/v3';
-import amzLib from '../../../../../../website/server/libs/amazonPayments';
+import amzLib from '../../../../../../website/server/libs/payments/amazon';
 
 describe('payments - amazon - #checkout', () => {
-  let endpoint = '/amazon/checkout';
-  let user, amazonCheckoutStub;
+  const endpoint = '/amazon/checkout';
+  let user; let
+    amazonCheckoutStub;
 
   beforeEach(async () => {
     user = await generateUser();
@@ -21,14 +22,14 @@ describe('payments - amazon - #checkout', () => {
 
   describe('success', () => {
     beforeEach(async () => {
-      amazonCheckoutStub = sinon.stub(amzLib, 'checkout').returnsPromise().resolves({});
+      amazonCheckoutStub = sinon.stub(amzLib, 'checkout').resolves({});
     });
 
     afterEach(() => {
       amzLib.checkout.restore();
     });
 
-    it('makes a purcahse with amazon checkout', async () => {
+    it('makes a purchase with amazon checkout', async () => {
       user = await generateUser({
         'profile.name': 'sender',
         'purchased.plan.customerId': 'customer-id',
@@ -37,7 +38,7 @@ describe('payments - amazon - #checkout', () => {
         balance: 2,
       });
 
-      let gift = {
+      const gift = {
         type: 'gems',
         gems: {
           amount: 16,
@@ -45,7 +46,7 @@ describe('payments - amazon - #checkout', () => {
         },
       };
 
-      let orderReferenceId = 'orderReferenceId-example';
+      const orderReferenceId = 'orderReferenceId-example';
 
       await user.post(endpoint, {
         gift,

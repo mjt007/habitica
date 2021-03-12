@@ -1,16 +1,36 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
-  generateGroup,
+  createAndPopulateGroup,
   translate as t,
-} from '../../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
+} from '../../../../../helpers/api-integration/v3';
 
 describe('POST /tasks/group/:groupid', () => {
-  let user, guild;
+  let user; let guild; let
+    manager;
+  let tzoffset;
+  const groupName = 'Test Public Guild';
+  const groupType = 'guild';
+
+  before(async () => {
+    tzoffset = new Date().getTimezoneOffset();
+  });
 
   beforeEach(async () => {
-    user = await generateUser({balance: 1});
-    guild = await generateGroup(user, {type: 'guild'});
+    //  user = await generateUser({ balance: 1, 'preferences.timezoneOffset': tzoffset });
+    const { group, groupLeader, members } = await createAndPopulateGroup({
+      leaderDetails: { balance: 10, 'preferences.timezoneOffset': tzoffset },
+      groupDetails: {
+        name: groupName,
+        type: groupType,
+        privacy: 'private',
+      },
+      members: 1,
+    });
+
+    guild = group;
+    user = groupLeader;
+    manager = members[0]; // eslint-disable-line prefer-destructuring
   });
 
   it('returns error when group is not found', async () => {
@@ -28,7 +48,7 @@ describe('POST /tasks/group/:groupid', () => {
   });
 
   it('returns error when user is not a member of the group', async () => {
-    let userWithoutChallenge = await generateUser();
+    const userWithoutChallenge = await generateUser();
 
     await expect(userWithoutChallenge.post(`/tasks/group/${guild._id}`, {
       text: 'test habit',
@@ -44,7 +64,7 @@ describe('POST /tasks/group/:groupid', () => {
   });
 
   it('returns error when non leader tries to create a task', async () => {
-    let userThatIsNotLeaderOfGroup = await generateUser({
+    const userThatIsNotLeaderOfGroup = await generateUser({
       guilds: [guild._id],
     });
 
@@ -62,7 +82,7 @@ describe('POST /tasks/group/:groupid', () => {
   });
 
   it('creates a habit', async () => {
-    let task = await user.post(`/tasks/group/${guild._id}`, {
+    const task = await user.post(`/tasks/group/${guild._id}`, {
       text: 'test habit',
       type: 'habit',
       up: false,
@@ -70,7 +90,7 @@ describe('POST /tasks/group/:groupid', () => {
       notes: 1976,
     });
 
-    let groupTask = await user.get(`/tasks/group/${guild._id}`);
+    const groupTask = await user.get(`/tasks/group/${guild._id}`);
 
     expect(groupTask[0].group.id).to.equal(guild._id);
     expect(task.text).to.eql('test habit');
@@ -81,13 +101,13 @@ describe('POST /tasks/group/:groupid', () => {
   });
 
   it('creates a todo', async () => {
-    let task = await user.post(`/tasks/group/${guild._id}`, {
+    const task = await user.post(`/tasks/group/${guild._id}`, {
       text: 'test todo',
       type: 'todo',
       notes: 1976,
     });
 
-    let groupTask = await user.get(`/tasks/group/${guild._id}`);
+    const groupTask = await user.get(`/tasks/group/${guild._id}`);
 
     expect(groupTask[0].group.id).to.equal(guild._id);
     expect(task.text).to.eql('test todo');
@@ -96,8 +116,8 @@ describe('POST /tasks/group/:groupid', () => {
   });
 
   it('creates a daily', async () => {
-    let now = new Date();
-    let task = await user.post(`/tasks/group/${guild._id}`, {
+    const now = new Date();
+    const task = await user.post(`/tasks/group/${guild._id}`, {
       text: 'test daily',
       type: 'daily',
       notes: 1976,
@@ -106,7 +126,7 @@ describe('POST /tasks/group/:groupid', () => {
       startDate: now,
     });
 
-    let groupTask = await user.get(`/tasks/group/${guild._id}`);
+    const groupTask = await user.get(`/tasks/group/${guild._id}`);
 
     expect(groupTask[0].group.id).to.equal(guild._id);
     expect(task.text).to.eql('test daily');
@@ -114,6 +134,29 @@ describe('POST /tasks/group/:groupid', () => {
     expect(task.type).to.eql('daily');
     expect(task.frequency).to.eql('daily');
     expect(task.everyX).to.eql(5);
-    expect(new Date(task.startDate)).to.eql(now);
+    expect(new Date(task.startDate)).to.eql(new Date(now.setHours(0, 0, 0, 0)));
+  });
+
+  it('allows a manager to add a group task', async () => {
+    await user.post(`/groups/${guild._id}/add-manager`, {
+      managerId: manager._id,
+    });
+
+    const task = await manager.post(`/tasks/group/${guild._id}`, {
+      text: 'test habit',
+      type: 'habit',
+      up: false,
+      down: true,
+      notes: 1976,
+    });
+
+    const groupTask = await manager.get(`/tasks/group/${guild._id}`);
+
+    expect(groupTask[0].group.id).to.equal(guild._id);
+    expect(task.text).to.eql('test habit');
+    expect(task.notes).to.eql('1976');
+    expect(task.type).to.eql('habit');
+    expect(task.up).to.eql(false);
+    expect(task.down).to.eql(true);
   });
 });

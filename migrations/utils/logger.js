@@ -1,6 +1,14 @@
-'use strict';
+/* eslint-disable import/no-commonjs */
+const chalk = require('chalk'); // eslint-disable-line import/no-extraneous-dependencies
 
-const chalk = require('chalk');
+function loggerGenerator (type, color) {
+  return function logger () {
+    const args = Array
+      .from(arguments) // eslint-disable-line prefer-rest-params
+      .map(arg => chalk[color](arg));
+    console[type].apply(null, args);
+  };
+}
 
 const logger = {
   info: loggerGenerator('info', 'cyan'),
@@ -9,12 +17,5 @@ const logger = {
   log: loggerGenerator('log', 'white'),
   warn: loggerGenerator('warn', 'yellow'),
 };
-
-function loggerGenerator (type, color) {
-  return function () {
-    let args = Array.from(arguments).map(arg => chalk[color](arg));
-    console[type].apply(null, args);
-  }
-}
 
 module.exports = logger;

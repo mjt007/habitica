@@ -2,10 +2,10 @@ import {
   generateUser,
   translate as t,
 } from '../../../../../helpers/api-integration/v3';
-import paypalPayments from '../../../../../../website/server/libs/paypalPayments';
+import paypalPayments from '../../../../../../website/server/libs/payments/paypal';
 
 describe('payments : paypal #subscribeCancel', () => {
-  let endpoint = '/paypal/subscribe/cancel';
+  const endpoint = '/paypal/subscribe/cancel';
   let user;
 
   beforeEach(async () => {
@@ -25,7 +25,7 @@ describe('payments : paypal #subscribeCancel', () => {
     let subscribeCancelStub;
 
     beforeEach(async () => {
-      subscribeCancelStub = sinon.stub(paypalPayments, 'subscribeCancel').returnsPromise().resolves('/');
+      subscribeCancelStub = sinon.stub(paypalPayments, 'subscribeCancel').resolves('/');
     });
 
     afterEach(() => {
@@ -41,7 +41,7 @@ describe('payments : paypal #subscribeCancel', () => {
         balance: 2,
       });
 
-      await user.get(endpoint);
+      await user.get(`${endpoint}?noRedirect=true`);
 
       expect(subscribeCancelStub).to.be.calledOnce;
 

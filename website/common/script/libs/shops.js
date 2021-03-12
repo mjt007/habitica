@@ -1,143 +1,293 @@
-import _ from 'lodash';
-import pickBy from 'lodash.pickby'; // Not available in lodash 3
+import values from 'lodash/values';
+import map from 'lodash/map';
+import keys from 'lodash/keys';
+import get from 'lodash/get';
+import each from 'lodash/each';
+import filter from 'lodash/filter';
+import eachRight from 'lodash/eachRight';
+import toArray from 'lodash/toArray';
+import pickBy from 'lodash/pickBy';
+import sortBy from 'lodash/sortBy';
 import content from '../content/index';
 import i18n from '../i18n';
+import getItemInfo from './getItemInfo';
+import updateStore from './updateStore';
+import seasonalShopConfig from './shops-seasonal.config';
+import featuredItems from '../content/shop-featuredItems';
 
-let shops = {};
+import getOfficialPinnedItems from './getOfficialPinnedItems';
 
-function lockQuest (quest, user) {
-  if (quest.lvl && user.stats.lvl < quest.lvl) return true;
-  if (quest.unlockCondition && (quest.key === 'moon1' || quest.key === 'moon2' || quest.key === 'moon3')) {
-    return user.loginIncentives < quest.unlockCondition.incentiveThreshold;
-  }
-  if (user.achievements.quests) return quest.previous && !user.achievements.quests[quest.previous];
-  return quest.previous;
-}
+const shops = {};
+
+/* Market */
+
+shops.getMarketShop = function getMarketShop (user, language) {
+  const officialPinned = getOfficialPinnedItems(user);
+  return {
+    identifier: 'market',
+    text: i18n.t('market'),
+    notes: i18n.t('welcomeMarketMobile'),
+    imageName: 'npc_alex',
+    categories: shops.getMarketCategories(user, language),
+    featured: {
+      text: i18n.t('featuredItems'),
+      items: officialPinned.length > 0
+        ? officialPinned.map(i => getItemInfo(user, i.type, get(content, i.path)))
+        : featuredItems.market().map(i => getItemInfo(user, i.type, get(content, i.path))),
+    },
+  };
+};
 
 shops.getMarketCategories = function getMarket (user, language) {
-  let categories = [];
-  let eggsCategory = {
+  const officialPinnedItems = getOfficialPinnedItems(user);
+
+  const categories = [];
+  const eggsCategory = {
     identifier: 'eggs',
     text: i18n.t('eggs', language),
-    notes: i18n.t('dropsExplanation', language),
+    notes: i18n.t('dropsExplanationEggs', language),
   };
 
-  eggsCategory.items = _(content.questEggs)
-    .values()
+  eggsCategory.items = sortBy(values(content.questEggs)
     .filter(egg => egg.canBuy(user))
-    .concat(_.values(content.dropEggs))
-    .map(egg => {
-      return {
-        key: egg.key,
-        text: i18n.t('egg', {eggType: egg.text()}, language),
-        notes: egg.notes(language),
-        value: egg.value,
-        class: `Pet_Egg_${egg.key}`,
-        locked: false,
-        currency: 'gems',
-        purchaseType: 'eggs',
-      };
-    }).sortBy('key').value();
+    .concat(values(content.dropEggs))
+    .map(egg => getItemInfo(user, 'eggs', egg, officialPinnedItems, language)), 'key');
   categories.push(eggsCategory);
 
-  let hatchingPotionsCategory = {
+  const hatchingPotionsCategory = {
     identifier: 'hatchingPotions',
     text: i18n.t('hatchingPotions', language),
     notes: i18n.t('dropsExplanation', language),
   };
-  hatchingPotionsCategory.items = _(content.hatchingPotions)
-    .values()
+  hatchingPotionsCategory.items = sortBy(values(content.hatchingPotions)
     .filter(hp => !hp.limited)
-    .map(hatchingPotion => {
-      return {
-        key: hatchingPotion.key,
-        text: hatchingPotion.text(language),
-        notes: hatchingPotion.notes(language),
-        class: `Pet_HatchingPotion_${hatchingPotion.key}`,
-        value: hatchingPotion.value,
-        locked: false,
-        currency: 'gems',
-        purchaseType: 'hatchingPotions',
-      };
-    }).sortBy('key').value();
+    .map(hatchingPotion => getItemInfo(user, 'hatchingPotions', hatchingPotion, officialPinnedItems, language)), 'key');
   categories.push(hatchingPotionsCategory);
 
-  let premiumHatchingPotionsCategory = {
+  const premiumHatchingPotionsCategory = {
     identifier: 'premiumHatchingPotions',
     text: i18n.t('magicHatchingPotions', language),
     notes: i18n.t('premiumPotionNoDropExplanation', language),
   };
-  premiumHatchingPotionsCategory.items = _(content.hatchingPotions)
-    .values()
-    .filter(hp => hp.limited && hp.canBuy())
-    .map(premiumHatchingPotion => {
-      return {
-        key: premiumHatchingPotion.key,
-        text: premiumHatchingPotion.text(language),
-        notes: `${premiumHatchingPotion.notes(language)} ${premiumHatchingPotion._addlNotes(language)}`,
-        class: `Pet_HatchingPotion_${premiumHatchingPotion.key}`,
-        value: premiumHatchingPotion.value,
-        locked: false,
-        currency: 'gems',
-        purchaseType: 'hatchingPotions',
-      };
-    }).sortBy('key').value();
-  categories.push(premiumHatchingPotionsCategory);
+  premiumHatchingPotionsCategory.items = sortBy(values(content.hatchingPotions)
+    .filter(hp => hp.limited && hp.canBuy(user))
+    .map(premiumHatchingPotion => getItemInfo(user, 'premiumHatchingPotion', premiumHatchingPotion, officialPinnedItems, language)), 'key');
+  if (premiumHatchingPotionsCategory.items.length > 0) {
+    categories.push(premiumHatchingPotionsCategory);
+  }
 
-  let foodCategory = {
+  const foodCategory = {
     identifier: 'food',
     text: i18n.t('food', language),
     notes: i18n.t('dropsExplanation', language),
   };
-  foodCategory.items = _(content.food)
-    .values()
+  foodCategory.items = sortBy(values(content.food)
     .filter(food => food.canDrop || food.key === 'Saddle')
-    .map(foodItem => {
-      return {
-        key: foodItem.key,
-        text: foodItem.text(language),
-        notes: foodItem.notes(language),
-        class: `Pet_Food_${foodItem.key}`,
-        value: foodItem.value,
-        locked: false,
-        currency: 'gems',
-        purchaseType: 'food',
-      };
-    }).sortBy('key').value();
+    .map(foodItem => getItemInfo(user, 'food', foodItem, officialPinnedItems, language)), 'key');
   categories.push(foodCategory);
 
   return categories;
 };
 
-shops.getQuestShopCategories = function getQuestShopCategories (user, language) {
-  let categories = [];
+function getClassName (classType, language) {
+  if (classType === 'wizard') {
+    return i18n.t('mage', language);
+  }
+  return i18n.t(classType, language);
+}
 
-  _.each(content.userCanOwnQuestCategories, type => {
-    let category = {
+// TODO Refactor the `.locked` logic
+shops.checkMarketGearLocked = function checkMarketGearLocked (user, items) {
+  const result = filter(items, ['pinType', 'marketGear']);
+  const officialPinnedItems = getOfficialPinnedItems(user);
+  const availableGear = map(updateStore(user), item => getItemInfo(user, 'marketGear', item, officialPinnedItems).path);
+  for (const gear of result) {
+    if (gear.klass !== user.stats.class) {
+      gear.locked = true;
+    }
+
+    if (!gear.locked && !availableGear.includes(gear.path)) {
+      gear.locked = true;
+    }
+
+    if (Boolean(gear.specialClass) && Boolean(gear.set)) {
+      const currentSet = gear.set === seasonalShopConfig.pinnedSets[gear.specialClass];
+
+      gear.locked = currentSet && user.stats.class !== gear.specialClass;
+    }
+
+    if (gear.canOwn) {
+      gear.locked = !gear.canOwn(user);
+    }
+
+    const itemOwned = user.items.gear.owned[gear.key];
+
+    if (itemOwned === false && !availableGear.includes(gear.path)) {
+      gear.locked = true;
+    }
+
+    gear.owned = itemOwned;
+
+    // @TODO: I'm not sure what the logic for locking is supposed to be
+    // But, I am pretty sure if we pin an armoire item, it needs to be unlocked
+    if (gear.klass === 'armoire') {
+      gear.locked = false;
+    }
+  }
+};
+
+shops.getMarketGearCategories = function getMarketGear (user, language) {
+  const categories = [];
+  const officialPinnedItems = getOfficialPinnedItems(user);
+
+  for (const classType of content.classes) {
+    const category = {
+      identifier: classType,
+      text: getClassName(classType, language),
+    };
+
+    const result = filter(content.gear.flat, gearItem => {
+      if (gearItem.klass === classType) return true;
+      const classShift = {
+        items: user.items,
+        stats: {
+          class: classType,
+        },
+      };
+      if (
+        gearItem.specialClass === classType
+        && user.items.gear.owned[gearItem.key] !== false
+      ) return gearItem.canOwn(classShift);
+      return false;
+    });
+
+    category.items = map(result, e => getItemInfo(user, 'marketGear', e, officialPinnedItems));
+
+    const specialGear = filter(content.gear.flat, gear => user.items.gear.owned[gear.key] === false
+        && gear.specialClass === classType
+        && gear.klass === 'special');
+
+    each(specialGear, gear => {
+      category.items.push(getItemInfo(user, 'marketGear', gear));
+    });
+
+    shops.checkMarketGearLocked(user, category.items);
+    categories.push(category);
+  }
+
+  const nonClassCategory = {
+    identifier: 'none',
+    text: i18n.t('none', language),
+  };
+
+  const specialNonClassGear = filter(content.gear.flat, gear => !user.items.gear.owned[gear.key]
+      && content.classes.indexOf(gear.klass) === -1
+      && content.classes.indexOf(gear.specialClass) === -1
+      && (gear.canOwn && gear.canOwn(user)));
+
+  nonClassCategory.items = map(specialNonClassGear, e => getItemInfo(user, 'marketGear', e));
+
+  shops.checkMarketGearLocked(user, nonClassCategory.items);
+  categories.push(nonClassCategory);
+  return categories;
+};
+
+/* Quests */
+
+shops.getQuestShop = function getQuestShop (user, language) {
+  return {
+    identifier: 'questShop',
+    text: i18n.t('quests'),
+    notes: i18n.t('ianTextMobile'),
+    imageName: 'npc_ian',
+    categories: shops.getQuestShopCategories(user, language),
+    featured: {
+      text: i18n.t('featuredQuests'),
+      items: featuredItems.quests().map(i => getItemInfo(user, i.type, get(content, i.path))),
+    },
+  };
+};
+
+shops.getQuestShopCategories = function getQuestShopCategories (user, language) {
+  const categories = [];
+  const officialPinnedItems = getOfficialPinnedItems(user);
+
+  /*
+   * ---------------------------------------------------------------
+   * Quest Bundles
+   * ---------------------------------------------------------------
+   *
+   * These appear in the Content index.js as follows:
+   * {
+   *   bundleName: {
+   *     key: 'bundleName',
+   *     text: t('bundleNameText'),
+   *     notes: t('bundleNameNotes'),
+   *     group: 'group',
+   *     bundleKeys: [
+   *       'quest1',
+   *       'quest2',
+   *       'quest3',
+   *     ],
+   *     canBuy () {
+   *       return true when bundle is available for purchase;
+   *     },
+   *   type: 'quests',
+   *   value: 7,
+   *   },
+   *   secondBundleName: {
+   *     ...
+   *   },
+   * }
+   *
+   * After filtering and mapping, the Shop will produce:
+   *
+   * [
+   *   {
+   *     identifier: 'bundle',
+   *     text: 'i18ned string for bundles category',
+   *     items: [
+   *       {
+   *         key: 'bundleName',
+   *         text: 'i18ned string for bundle title',
+   *         notes: 'i18ned string for bundle description',
+   *         group: 'group',
+   *         value: 7,
+   *         currency: 'gems',
+   *         class: 'quest_bundle_bundleName',
+   *         purchaseType: 'bundles',
+   *       },
+   *       { second bundle },
+   *     ],
+   *   },
+   *   { main quest category 1 },
+   *   ...
+   * ]
+   *
+   */
+
+  const bundleCategory = {
+    identifier: 'bundle',
+    text: i18n.t('questBundles', language),
+  };
+
+  bundleCategory.items = sortBy(values(content.bundles)
+    .filter(bundle => bundle.type === 'quests' && bundle.canBuy())
+    .map(bundle => getItemInfo(user, 'bundles', bundle, officialPinnedItems, language)));
+
+  if (bundleCategory.items.length > 0) {
+    categories.push(bundleCategory);
+  }
+
+  each(content.userCanOwnQuestCategories, type => {
+    const category = {
       identifier: type,
       text: i18n.t(`${type}Quests`, language),
     };
 
-    category.items = _(content.questsByLevel)
+    category.items = content.questsByLevel
       .filter(quest => quest.canBuy(user) && quest.category === type)
-      .map(quest => {
-        let locked = lockQuest(quest, user);
-        return {
-          key: quest.key,
-          text: quest.text(language),
-          notes: quest.notes(language),
-          value: quest.goldValue ? quest.goldValue : quest.value,
-          currency: quest.goldValue ? 'gold' : 'gems',
-          locked,
-          unlockCondition: quest.unlockCondition,
-          drop: quest.drop,
-          boss: quest.boss,
-          collect: quest.collect,
-          lvl: quest.lvl,
-          class: locked ? `inventory_quest_scroll_locked inventory_quest_scroll_${quest.key}_locked` : `inventory_quest_scroll inventory_quest_scroll_${quest.key}`,
-          purchaseType: 'quests',
-        };
-      }).value();
+      .map(quest => getItemInfo(user, 'quests', quest, officialPinnedItems, language));
 
     categories.push(category);
   });
@@ -145,71 +295,158 @@ shops.getQuestShopCategories = function getQuestShopCategories (user, language) 
   return categories;
 };
 
-shops.getTimeTravelersCategories = function getTimeTravelersCategories (user, language) {
-  let categories = [];
-  let stable = {pets: 'Pet-', mounts: 'Mount_Head_'};
-  for (let type in stable) {
-    if (stable.hasOwnProperty(type)) {
-      let category = {
-        identifier: type,
-        text: i18n.t(type, language),
-        items: [],
-      };
+/* Time Travelers */
 
-      for (let key in content.timeTravelStable[type]) {
-        if (content.timeTravelStable[type].hasOwnProperty(key)) {
-          if (!user.items[type][key]) {
-            let item = {
-              key,
-              text: content.timeTravelStable[type][key](language),
-              class: stable[type] + key,
-              type,
-              purchaseType: type,
-              value: 1,
-              notes: '',
-              locked: false,
-              currency: 'hourglasses',
-            };
-            category.items.push(item);
-          }
-        }
+shops.getTimeTravelersShop = function getTimeTravelersShop (user, language) {
+  const hasTrinkets = user.purchased.plan.consecutive.trinkets > 0;
+
+  return {
+    identifier: 'timeTravelersShop',
+    text: i18n.t('timeTravelers'),
+    opened: hasTrinkets,
+    notes: hasTrinkets ? i18n.t('timeTravelersPopover') : i18n.t('timeTravelersPopoverNoSubMobile'),
+    imageName: hasTrinkets ? 'npc_timetravelers_active' : 'npc_timetravelers',
+    categories: shops.getTimeTravelersCategories(user, language),
+  };
+};
+
+shops.getTimeTravelersCategories = function getTimeTravelersCategories (user, language) {
+  const categories = [];
+  const stable = { pets: 'Pet-', mounts: 'Mount_Icon_' };
+
+  const officialPinnedItems = getOfficialPinnedItems(user);
+
+  const questCategory = {
+    identifier: 'quests',
+    text: i18n.t('quests', language),
+    items: [],
+  };
+  for (const key in content.quests) {
+    if (content.quests[key].category === 'timeTravelers') {
+      const item = getItemInfo(user, 'quests', content.quests[key], officialPinnedItems, language);
+      questCategory.items.push(item);
+    }
+  }
+  categories.push(questCategory);
+
+  const backgroundCategory = {
+    identifier: 'backgrounds',
+    text: i18n.t('backgrounds', language),
+    items: [],
+  };
+  for (const bg in content.backgrounds.timeTravelBackgrounds) {
+    if (!user.purchased.background[bg]) {
+      const item = getItemInfo(
+        user,
+        'background',
+        content.backgroundsFlat[bg],
+        officialPinnedItems,
+        language,
+      );
+      backgroundCategory.items.push(item);
+    }
+  }
+  categories.push(backgroundCategory);
+
+  for (const type of Object.keys(stable)) {
+    const category = {
+      identifier: type,
+      text: i18n.t(type, language),
+      items: [],
+    };
+
+    for (const key of Object.keys(content.timeTravelStable[type])) {
+      if (!user.items[type][key]) {
+        const item = getItemInfo(user, 'timeTravelersStable', {
+          key,
+          type,
+        }, officialPinnedItems, language);
+        category.items.push(item);
       }
-      if (category.items.length > 0) {
-        categories.push(category);
-      }
+    }
+
+    if (category.items.length > 0) {
+      categories.push(category);
     }
   }
 
-  let sets = content.timeTravelerStore(user);
-  for (let setKey in  sets) {
-    if (sets.hasOwnProperty(setKey)) {
-      let set = sets[setKey];
-      let category = {
-        identifier: set.key,
-        text: set.text(language),
-        purchaseAll: true,
-      };
+  const sets = content.timeTravelerStore(user);
+  for (const setKey of Object.keys(sets)) {
+    const set = sets[setKey];
+    const category = {
+      identifier: set.key,
+      text: set.text(language),
+      path: `mystery.${set.key}`,
+      pinType: 'mystery_set',
+      purchaseAll: true,
+    };
 
-      category.items = _.map(set.items, item => {
-        return {
-          key: item.key,
-          text: item.text(language),
-          notes: item.notes(language),
-          type: item.type,
-          purchaseType: 'gear',
-          value: 1,
-          locked: false,
-          currency: 'hourglasses',
-          class: `shop_${item.key}`,
-        };
-      });
-      if (category.items.length > 0) {
-        categories.push(category);
-      }
+    category.items = map(set.items, item => ({
+      key: item.key,
+      text: item.text(language),
+      notes: item.notes(language),
+      type: item.type,
+      purchaseType: 'gear',
+      value: 1,
+      locked: false,
+      currency: 'hourglasses',
+      class: `shop_${item.key}`,
+      pinKey: `timeTravelers!gear.flat.${item.key}`,
+    }));
+    if (category.items.length > 0) {
+      categories.push(category);
     }
   }
 
   return categories;
+};
+
+/* Seasonal */
+
+const flatGearArray = toArray(content.gear.flat);
+
+shops.getSeasonalGearBySet = function getSeasonalGearBySet (
+  user, set, officialPinnedItems,
+  language, ignoreAlreadyOwned = false,
+) {
+  return flatGearArray.filter(gear => {
+    if (!ignoreAlreadyOwned && user.items.gear.owned[gear.key] !== undefined) return false;
+
+    return gear.set === set;
+  }).map(gear => {
+    const currentSet = gear.set === seasonalShopConfig.pinnedSets[gear.specialClass];
+
+    // only the current season set can be purchased by gold
+    const itemInfo = getItemInfo(null, currentSet ? 'marketGear' : 'gear', gear, officialPinnedItems, language);
+    itemInfo.locked = currentSet && user.stats.class !== gear.specialClass;
+
+    return itemInfo;
+  });
+};
+
+shops.getSeasonalShop = function getSeasonalShop (user, language) {
+  const officialPinnedItems = getOfficialPinnedItems(user);
+
+  const resObject = {
+    identifier: 'seasonalShop',
+    text: i18n.t('seasonalShop'),
+    notes: i18n.t(`seasonalShop${seasonalShopConfig.currentSeason}Text`),
+    imageName: seasonalShopConfig.opened ? 'seasonalshop_open' : 'seasonalshop_closed',
+    opened: seasonalShopConfig.opened,
+    categories: this.getSeasonalShopCategories(user, language),
+    featured: {
+      text: i18n.t(seasonalShopConfig.featuredSet),
+      items: shops.getSeasonalGearBySet(
+        user,
+        seasonalShopConfig.featuredSet,
+        officialPinnedItems,
+        language,
+        true,
+      ),
+    },
+  };
+
+  return resObject;
 };
 
 // To switch seasons/available inventory, edit the AVAILABLE_SETS object to whatever should be sold.
@@ -217,105 +454,64 @@ shops.getTimeTravelersCategories = function getTimeTravelersCategories (user, la
 //   setKey: i18n.t('setTranslationString', language),
 // };
 shops.getSeasonalShopCategories = function getSeasonalShopCategories (user, language) {
-  const AVAILABLE_SETS = {
-  };
+  const officialPinnedItems = getOfficialPinnedItems(user);
 
   const AVAILABLE_SPELLS = [
+    ...seasonalShopConfig.availableSpells,
   ];
 
   const AVAILABLE_QUESTS = [
+    ...seasonalShopConfig.availableQuests,
   ];
 
-  let categories = [];
+  const categories = [];
 
-  let flatGearArray = _.toArray(content.gear.flat);
+  const spells = pickBy(
+    content.spells.special,
+    (spell, key) => AVAILABLE_SPELLS.indexOf(key) !== -1,
+  );
 
-  let spells = pickBy(content.spells.special, (spell, key) => {
-    return _.indexOf(AVAILABLE_SPELLS, key) !== -1;
-  });
-
-  if (_.keys(spells).length > 0) {
-    let category = {
+  if (keys(spells).length > 0) {
+    const category = {
       identifier: 'spells',
       text: i18n.t('seasonalItems', language),
     };
 
-    category.items = _.map(spells, (spell, key) => {
-      return {
-        key,
-        text: spell.text(language),
-        notes: spell.notes(language),
-        value: spell.value,
-        type: 'special',
-        currency: 'gold',
-        locked: false,
-        purchaseType: 'spells',
-        class: `inventory_special_${key}`,
-      };
-    });
+    category.items = map(
+      spells,
+      spell => getItemInfo(user, 'seasonalSpell', spell, officialPinnedItems, language),
+    );
 
     categories.push(category);
   }
 
-  let quests = pickBy(content.quests, (quest, key) => {
-    return _.indexOf(AVAILABLE_QUESTS, key) !== -1;
-  });
+  const quests = pickBy(content.quests, (quest, key) => AVAILABLE_QUESTS.indexOf(key) !== -1);
 
-  if (_.keys(quests).length > 0) {
-    let category = {
+  if (keys(quests).length > 0) {
+    const category = {
       identifier: 'quests',
       text: i18n.t('quests', language),
     };
 
-    category.items = _.map(quests, (quest, key) => {
-      return {
-        key,
-        text: quest.text(language),
-        notes: quest.notes(language),
-        value: quest.value,
-        type: 'quests',
-        currency: 'gems',
-        locked: false,
-        drop: quest.drop,
-        boss: quest.boss,
-        collect: quest.collect,
-        class: `inventory_quest_scroll_${key}`,
-        purchaseType: 'quests',
-      };
-    });
+    category.items = map(quests, quest => getItemInfo(user, 'seasonalQuest', quest, officialPinnedItems, language));
 
     categories.push(category);
   }
 
-  for (let key in AVAILABLE_SETS) {
-    if (AVAILABLE_SETS.hasOwnProperty(key)) {
-      let category = {
-        identifier: key,
-        text: AVAILABLE_SETS[key],
-      };
+  for (const set of seasonalShopConfig.availableSets) {
+    const category = {
+      identifier: set,
+      text: i18n.t(set),
+    };
 
-      category.items = _(flatGearArray).filter((gear) => {
-        if (gear.index !== key) {
-          return false;
-        }
-        return user.items.gear.owned[gear.key] === undefined;
-      }).where({index: key}).map(gear => {
-        return {
-          key: gear.key,
-          text: gear.text(language),
-          notes: gear.notes(language),
-          value: gear.twoHanded ? 2 : 1,
-          type: gear.type,
-          specialClass: gear.specialClass,
-          locked: false,
-          currency: 'gems',
-          purchaseType: 'gear',
-          class: `shop_${gear.key}`,
-        };
-      }).value();
-      if (category.items.length > 0) {
-        categories.push(category);
-      }
+    category.items = shops.getSeasonalGearBySet(user, set, officialPinnedItems, language, false);
+
+    if (category.items.length > 0) {
+      const item = category.items[0];
+
+      category.specialClass = item.specialClass;
+      category.event = item.event;
+      categories.push(category);
     }
   }
 
@@ -323,25 +519,16 @@ shops.getSeasonalShopCategories = function getSeasonalShopCategories (user, lang
 };
 
 shops.getBackgroundShopSets = function getBackgroundShopSets (language) {
-  let sets = [];
+  const sets = [];
+  const officialPinnedItems = getOfficialPinnedItems();
 
-  _.eachRight(content.backgrounds, (group, key) => {
-    let set = {
+  eachRight(content.backgrounds, (group, key) => {
+    const set = {
       identifier: key,
       text: i18n.t(key, language),
     };
 
-    set.items = _(group)
-      .map((background, bgKey) => {
-        return {
-          key: bgKey,
-          text: background.text(language),
-          notes: background.notes(language),
-          value: background.price,
-          currency: background.currency || 'gems',
-          purchaseType: 'backgrounds',
-        };
-      }).value();
+    set.items = map(group, background => getItemInfo(null, 'background', background, officialPinnedItems, language));
 
     sets.push(set);
   });
@@ -349,4 +536,4 @@ shops.getBackgroundShopSets = function getBackgroundShopSets (language) {
   return sets;
 };
 
-module.exports = shops;
+export default shops;

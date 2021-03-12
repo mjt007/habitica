@@ -1,7 +1,7 @@
 import nconf from 'nconf';
 import {
   generateUser,
-} from '../../../../helpers/api-v3-integration.helper';
+} from '../../../../helpers/api-integration/v3';
 
 describe('POST /debug/add-hourglass', () => {
   let userToGetHourGlass;
@@ -17,7 +17,7 @@ describe('POST /debug/add-hourglass', () => {
   it('adds Hourglass to the current user', async () => {
     await userToGetHourGlass.post('/debug/add-hourglass');
 
-    let userWithHourGlass = await userToGetHourGlass.get('/user');
+    const userWithHourGlass = await userToGetHourGlass.get('/user');
 
     expect(userWithHourGlass.purchased.plan.consecutive.trinkets).to.equal(1);
   });

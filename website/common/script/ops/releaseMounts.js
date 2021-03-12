@@ -1,30 +1,44 @@
 import content from '../content/index';
+import { mountMasterProgress } from '../count';
 import i18n from '../i18n';
 import {
   NotAuthorized,
 } from '../libs/errors';
 
-module.exports = function releaseMounts (user, req = {}, analytics) {
+export default function releaseMounts (user, req = {}, analytics) {
   if (user.balance < 1) {
     throw new NotAuthorized(i18n.t('notEnoughGems', req.language));
   }
 
+  if (mountMasterProgress(user.items.mounts) !== 90) {
+    throw new NotAuthorized(i18n.t('notEnoughMounts', req.language));
+  }
+
   user.balance -= 1;
 
-  let mountInfo = content.mountInfo[user.items.currentMount];
+  let giveMountMasterAchievement = true;
+
+  const mountInfo = content.mountInfo[user.items.currentMount];
 
   if (mountInfo && mountInfo.type === 'drop') {
     user.items.currentMount = '';
   }
 
-  for (let mount in content.pets) {
+  for (const mount of Object.keys(content.pets)) {
+    if (user.items.mounts[mount] === null || user.items.mounts[mount] === undefined) {
+      giveMountMasterAchievement = false;
+    }
     user.items.mounts[mount] = null;
   }
 
-  if (!user.achievements.mountMasterCount) {
-    user.achievements.mountMasterCount = 0;
+  if (user.markModified) user.markModified('items.mounts');
+
+  if (giveMountMasterAchievement) {
+    if (!user.achievements.mountMasterCount) {
+      user.achievements.mountMasterCount = 0;
+    }
+    user.achievements.mountMasterCount += 1;
   }
-  user.achievements.mountMasterCount++;
 
   if (analytics) {
     analytics.track('release mounts', {
@@ -40,4 +54,4 @@ module.exports = function releaseMounts (user, req = {}, analytics) {
     user.items.mounts,
     i18n.t('mountsReleased'),
   ];
-};
+}

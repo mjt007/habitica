@@ -1,14 +1,14 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
   generateChallenge,
   createAndPopulateGroup,
   translate as t,
-} from '../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
+} from '../../../../helpers/api-integration/v3';
 
 describe('POST /challenges/:challengeId/leave', () => {
   it('returns error when challengeId is not a valid UUID', async () => {
-    let user = await generateUser();
+    const user = await generateUser();
 
     await expect(user.post('/challenges/test/leave')).to.eventually.be.rejected.and.eql({
       code: 400,
@@ -18,7 +18,7 @@ describe('POST /challenges/:challengeId/leave', () => {
   });
 
   it('returns error when challengeId is not for a valid challenge', async () => {
-    let user = await generateUser();
+    const user = await generateUser();
 
     await expect(user.post(`/challenges/${generateUUID()}/leave`)).to.eventually.be.rejected.and.eql({
       code: 404,
@@ -32,40 +32,42 @@ describe('POST /challenges/:challengeId/leave', () => {
     let group;
     let challenge;
     let notInChallengeUser;
+    let notInGroupLeavingUser;
     let leavingUser;
     let taskText;
 
     beforeEach(async () => {
-      let populatedGroup = await createAndPopulateGroup({
-        members: 2,
+      const populatedGroup = await createAndPopulateGroup({
+        members: 3,
       });
 
       groupLeader = populatedGroup.groupLeader;
       group = populatedGroup.group;
-      leavingUser = populatedGroup.members[0];
-      notInChallengeUser = populatedGroup.members[1];
+      leavingUser = populatedGroup.members[0]; // eslint-disable-line prefer-destructuring
+      notInChallengeUser = populatedGroup.members[1]; // eslint-disable-line prefer-destructuring
+      notInGroupLeavingUser = populatedGroup.members[2]; // eslint-disable-line prefer-destructuring
 
       challenge = await generateChallenge(groupLeader, group);
+      await groupLeader.post(`/challenges/${challenge._id}/join`);
 
       taskText = 'A challenge task text';
 
       await groupLeader.post(`/tasks/challenge/${challenge._id}`, [
-        {type: 'habit', text: taskText},
+        { type: 'habit', text: taskText },
       ]);
 
       await leavingUser.post(`/challenges/${challenge._id}/join`);
 
+      await notInGroupLeavingUser.post(`/challenges/${challenge._id}/join`);
+      await notInGroupLeavingUser.post(`/groups/${group._id}/leave`, {
+        keepChallenges: 'remain-in-challenges',
+      });
+
       await challenge.sync();
     });
 
-    it('returns an error when user doesn\'t have permissions to view the challenge', async () => {
-      let unauthorizedUser = await generateUser();
-
-      await expect(unauthorizedUser.post(`/challenges/${challenge._id}/leave`)).to.eventually.be.rejected.and.eql({
-        code: 404,
-        error: 'NotFound',
-        message: t('challengeNotFound'),
-      });
+    it('lets user leave when not a member of the challenge group', async () => {
+      await expect(notInGroupLeavingUser.post(`/challenges/${challenge._id}/leave`)).to.eventually.be.ok;
     });
 
     it('returns an error when user isn\'t a member of the challenge', async () => {
@@ -85,7 +87,7 @@ describe('POST /challenges/:challengeId/leave', () => {
     });
 
     it('decreases memberCount of challenge', async () => {
-      let oldMemberCount = challenge.memberCount;
+      const oldMemberCount = challenge.memberCount;
 
       await leavingUser.post(`/challenges/${challenge._id}/leave`);
 
@@ -98,10 +100,8 @@ describe('POST /challenges/:challengeId/leave', () => {
       await leavingUser.post(`/challenges/${challenge._id}/leave`, {
         keep: 'remove-all',
       });
-      let tasks = await leavingUser.get('/tasks/user');
-      let tasksTexts = tasks.map((task) => {
-        return task.text;
-      });
+      const tasks = await leavingUser.get('/tasks/user');
+      const tasksTexts = tasks.map(task => task.text);
 
       expect(tasksTexts).to.not.include(taskText);
     });
@@ -111,15 +111,10 @@ describe('POST /challenges/:challengeId/leave', () => {
         keep: 'test',
       });
 
-      let tasks = await leavingUser.get('/tasks/user');
-      let testTask = _.find(tasks, (task) => {
-        return task.text === taskText;
-      });
+      const tasks = await leavingUser.get('/tasks/user');
+      const testTask = _.find(tasks, task => task.text === taskText);
 
       expect(testTask).to.not.be.undefined;
-      expect(testTask.challenge).to.eql({
-        name: 'None',
-      });
     });
   });
 });

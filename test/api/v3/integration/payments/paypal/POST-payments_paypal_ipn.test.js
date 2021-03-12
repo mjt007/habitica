@@ -1,10 +1,10 @@
 import {
   generateUser,
 } from '../../../../../helpers/api-integration/v3';
-import paypalPayments from '../../../../../../website/server/libs/paypalPayments';
+import paypalPayments from '../../../../../../website/server/libs/payments/paypal';
 
 describe('payments - paypal - #ipn', () => {
-  let endpoint = '/paypal/ipn';
+  const endpoint = '/paypal/ipn';
   let user;
 
   beforeEach(async () => {
@@ -12,7 +12,7 @@ describe('payments - paypal - #ipn', () => {
   });
 
   it('verifies credentials', async () => {
-    let result = await user.post(endpoint);
+    const result = await user.post(endpoint);
     expect(result).to.eql('OK');
   });
 
@@ -20,7 +20,7 @@ describe('payments - paypal - #ipn', () => {
     let ipnStub;
 
     beforeEach(async () => {
-      ipnStub = sinon.stub(paypalPayments, 'ipn').returnsPromise().resolves({});
+      ipnStub = sinon.stub(paypalPayments, 'ipn').resolves({});
     });
 
     afterEach(() => {

@@ -2,15 +2,25 @@ import {
   generateUser,
   translate as t,
 } from '../../../../helpers/api-integration/v3';
+import content from '../../../../../website/common/script/content/index';
 
 describe('POST /user/release-mounts', () => {
   let user;
-  let animal = 'Wolf-Base';
+  const animal = 'Wolf-Base';
+
+  const loadMounts = () => {
+    const mounts = {};
+    Object.keys(content.pets).forEach(m => {
+      mounts[m] = content.pets[m];
+      mounts[m] = true;
+    });
+    return mounts;
+  };
 
   beforeEach(async () => {
     user = await generateUser({
       'items.currentMount': animal,
-      'items.mounts': {animal: true},
+      'items.mounts': loadMounts(),
     });
   });
 
@@ -30,7 +40,7 @@ describe('POST /user/release-mounts', () => {
       balance: 1,
     });
 
-    let response = await user.post('/user/release-mounts');
+    const response = await user.post('/user/release-mounts');
     await user.sync();
 
     expect(response.message).to.equal(t('mountsReleased'));

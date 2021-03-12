@@ -1,35 +1,42 @@
 /* eslint-disable camelcase */
-import paypalPayments from '../../../libs/paypalPayments';
+import paypalPayments from '../../../libs/payments/paypal';
+import logger from '../../../libs/logger';
 import shared from '../../../../common';
 import {
-  authWithUrl,
   authWithSession,
+  authWithHeaders,
 } from '../../../middlewares/auth';
 import {
   BadRequest,
 } from '../../../libs/errors';
+import apiError from '../../../libs/apiError';
 
-const i18n = shared.i18n;
-
-let api = {};
+const api = {};
 
 /**
  * @apiIgnore Payments are considered part of the private API
  * @api {get} /paypal/checkout Paypal: checkout
  * @apiName PaypalCheckout
  * @apiGroup Payments
- **/
+ * */
 api.checkout = {
   method: 'GET',
   url: '/paypal/checkout',
-  middlewares: [authWithUrl],
+  middlewares: [authWithSession],
   async handler (req, res) {
-    let gift = req.query.gift ? JSON.parse(req.query.gift) : undefined;
+    const gift = req.query.gift ? JSON.parse(req.query.gift) : undefined;
     req.session.gift = req.query.gift;
 
-    let link = await paypalPayments.checkout({gift});
+    const { gemsBlock } = req.query;
+    req.session.gemsBlock = gemsBlock;
 
-    res.redirect(link);
+    const link = await paypalPayments.checkout({ gift, gemsBlock, user: res.locals.user });
+
+    if (req.query.noRedirect) {
+      res.respond(200);
+    } else {
+      res.redirect(link);
+    }
   },
 };
 
@@ -38,24 +45,32 @@ api.checkout = {
  * @api {get} /paypal/checkout/success Paypal: checkout success
  * @apiName PaypalCheckoutSuccess
  * @apiGroup Payments
- **/
+ * */
 api.checkoutSuccess = {
   method: 'GET',
   url: '/paypal/checkout/success',
   middlewares: [authWithSession],
   async handler (req, res) {
-    let paymentId = req.query.paymentId;
-    let customerId = req.query.PayerID;
-    let user = res.locals.user;
-    let gift = req.session.gift ? JSON.parse(req.session.gift) : undefined;
+    const { paymentId } = req.query;
+    const customerId = req.query.PayerID;
+    const { user } = res.locals;
+    const gift = req.session.gift ? JSON.parse(req.session.gift) : undefined;
     delete req.session.gift;
+    const { gemsBlock } = req.session;
+    delete req.session.gemsBlock;
 
-    if (!paymentId) throw new BadRequest(i18n.t('missingPaymentId'));
-    if (!customerId) throw new BadRequest(i18n.t('missingCustomerId'));
+    if (!paymentId) throw new BadRequest(apiError('missingPaymentId'));
+    if (!customerId) throw new BadRequest(apiError('missingCustomerId'));
 
-    await paypalPayments.checkoutSuccess({user, gift, paymentId, customerId});
+    await paypalPayments.checkoutSuccess({
+      user, gemsBlock, gift, paymentId, customerId, headers: req.headers,
+    });
 
-    res.redirect('/');
+    if (req.query.noRedirect) {
+      res.respond(200);
+    } else {
+      res.redirect('/redirect/paypal-success-checkout');
+    }
   },
 };
 
@@ -64,23 +79,27 @@ api.checkoutSuccess = {
  * @api {get} /paypal/subscribe Paypal: subscribe
  * @apiName PaypalSubscribe
  * @apiGroup Payments
- **/
+ * */
 api.subscribe = {
   method: 'GET',
   url: '/paypal/subscribe',
-  middlewares: [authWithUrl],
+  middlewares: [authWithSession],
   async handler (req, res) {
-    if (!req.query.sub) throw new BadRequest(i18n.t('missingSubKey'));
+    if (!req.query.sub) throw new BadRequest(apiError('missingSubKey'));
 
-    let sub = shared.content.subscriptionBlocks[req.query.sub];
-    let coupon = req.query.coupon;
+    const sub = shared.content.subscriptionBlocks[req.query.sub];
+    const { coupon } = req.query;
 
-    let link = await paypalPayments.subscribe({sub, coupon});
+    const link = await paypalPayments.subscribe({ sub, coupon });
 
     req.session.paypalBlock = req.query.sub;
     req.session.groupId = req.query.groupId;
 
-    res.redirect(link);
+    if (req.query.noRedirect) {
+      res.respond(200);
+    } else {
+      res.redirect(link);
+    }
   },
 };
 
@@ -89,26 +108,32 @@ api.subscribe = {
  * @api {get} /paypal/subscribe/success Paypal: subscribe success
  * @apiName PaypalSubscribeSuccess
  * @apiGroup Payments
- **/
+ * */
 api.subscribeSuccess = {
   method: 'GET',
   url: '/paypal/subscribe/success',
   middlewares: [authWithSession],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
-    if (!req.session.paypalBlock) throw new BadRequest(i18n.t('missingPaypalBlock'));
+    if (!req.session.paypalBlock) throw new BadRequest(apiError('missingPaypalBlock'));
 
-    let block = shared.content.subscriptionBlocks[req.session.paypalBlock];
-    let groupId = req.session.groupId;
-    let token = req.query.token;
+    const block = shared.content.subscriptionBlocks[req.session.paypalBlock];
+    const { groupId } = req.session;
+    const { token } = req.query;
 
     delete req.session.paypalBlock;
     delete req.session.groupId;
 
-    await paypalPayments.subscribeSuccess({user, block, groupId, token, headers: req.headers});
+    await paypalPayments.subscribeSuccess({
+      user, block, groupId, token, headers: req.headers,
+    });
 
-    res.redirect('/');
+    if (req.query.noRedirect) {
+      res.respond(200);
+    } else {
+      res.redirect('/redirect/paypal-success-subscribe');
+    }
   },
 };
 
@@ -117,38 +142,45 @@ api.subscribeSuccess = {
  * @api {get} /paypal/subscribe/cancel Paypal: subscribe cancel
  * @apiName PaypalSubscribeCancel
  * @apiGroup Payments
- **/
+ * */
 api.subscribeCancel = {
   method: 'GET',
   url: '/paypal/subscribe/cancel',
-  middlewares: [authWithUrl],
+  middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let groupId = req.query.groupId;
+    const { user } = res.locals;
+    const { groupId } = req.query;
 
-    await paypalPayments.subscribeCancel({user, groupId});
+    await paypalPayments.subscribeCancel({ user, groupId });
 
-    res.redirect('/');
+    if (req.query.noRedirect) {
+      res.respond(200);
+    } else {
+      res.redirect('/user/settings/subscription');
+    }
   },
 };
 
-// General IPN handler. We catch cancelled Habitica subscriptions for users who manually cancel their
-// recurring paypal payments in their paypal dashboard. TODO ? Remove this when we can move to webhooks or some other solution
+// General IPN handler. We catch cancelled Habitica subscriptions
+// for users who manually cancel their recurring paypal payments in their paypal dashboard.
+// TODO ? Remove this when we can move to webhooks or some other solution
 
 /**
  * @apiIgnore Payments are considered part of the private API
  * @api {post} /paypal/ipn Paypal IPN
  * @apiName PaypalIpn
  * @apiGroup Payments
- **/
+ * */
 api.ipn = {
   method: 'POST',
   url: '/paypal/ipn',
   async handler (req, res) {
     res.sendStatus(200);
 
-    await paypalPayments.ipn(req.body);
+    paypalPayments
+      .ipn(req.body)
+      .catch(err => logger.error(err, 'Error handling Paypal IPN message.'));
   },
 };
 
-module.exports = api;
+export default api;

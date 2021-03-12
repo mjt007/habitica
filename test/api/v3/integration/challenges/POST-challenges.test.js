@@ -1,13 +1,13 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
   createAndPopulateGroup,
   translate as t,
-} from '../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
+} from '../../../../helpers/api-integration/v3';
 
 describe('POST /challenges', () => {
   it('returns error when group is empty', async () => {
-    let user = await generateUser();
+    const user = await generateUser();
 
     await expect(user.post('/challenges')).to.eventually.be.rejected.and.eql({
       code: 400,
@@ -17,7 +17,7 @@ describe('POST /challenges', () => {
   });
 
   it('returns error when groupId is not for a valid group', async () => {
-    let user = await generateUser();
+    const user = await generateUser();
 
     await expect(user.post('/challenges', {
       group: generateUUID(),
@@ -29,7 +29,7 @@ describe('POST /challenges', () => {
   });
 
   it('returns error when creating a challenge in the tavern with no prize', async () => {
-    let user = await generateUser();
+    const user = await generateUser();
 
     await expect(user.post('/challenges', {
       group: 'habitrpg',
@@ -42,8 +42,8 @@ describe('POST /challenges', () => {
   });
 
   it('returns error when creating a challenge in a public guild and you are not a member of it', async () => {
-    let user = await generateUser();
-    let { group } = await createAndPopulateGroup({
+    const user = await generateUser();
+    const { group } = await createAndPopulateGroup({
       groupDetails: {
         type: 'guild',
         privacy: 'public',
@@ -66,7 +66,7 @@ describe('POST /challenges', () => {
     let groupMember;
 
     beforeEach(async () => {
-      let populatedGroup = await createAndPopulateGroup({
+      const populatedGroup = await createAndPopulateGroup({
         members: 1,
         leaderDetails: {
           balance: 3,
@@ -81,17 +81,7 @@ describe('POST /challenges', () => {
 
       groupLeader = await populatedGroup.groupLeader.sync();
       group = populatedGroup.group;
-      groupMember = populatedGroup.members[0];
-    });
-
-    it('returns an error when non-leader member creates a challenge in leaderOnly group', async () => {
-      await expect(groupMember.post('/challenges', {
-        group: group._id,
-      })).to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('onlyGroupLeaderChal'),
-      });
+      groupMember = populatedGroup.members[0]; // eslint-disable-line prefer-destructuring
     });
 
     it('returns an error when non-leader member creates a challenge in leaderOnly group', async () => {
@@ -105,14 +95,14 @@ describe('POST /challenges', () => {
     });
 
     it('allows non-leader member to create a challenge', async () => {
-      let populatedGroup = await createAndPopulateGroup({
+      const populatedGroup = await createAndPopulateGroup({
         members: 1,
       });
 
       group = populatedGroup.group;
-      groupMember = populatedGroup.members[0];
+      groupMember = populatedGroup.members[0]; // eslint-disable-line prefer-destructuring
 
-      let chal = await groupMember.post('/challenges', {
+      const chal = await groupMember.post('/challenges', {
         group: group._id,
         name: 'Test Challenge',
         shortName: 'TC Label',
@@ -120,13 +110,13 @@ describe('POST /challenges', () => {
 
       expect(chal.leader).to.eql({
         _id: groupMember._id,
-        profile: {name: groupMember.profile.name},
+        profile: { name: groupMember.profile.name },
       });
     });
 
     it('doesn\'t take gems from user or group when challenge has no prize', async () => {
-      let oldUserBalance = groupLeader.balance;
-      let oldGroupBalance = group.balance;
+      const oldUserBalance = groupLeader.balance;
+      const oldGroupBalance = group.balance;
 
       await groupLeader.post('/challenges', {
         group: group._id,
@@ -153,9 +143,9 @@ describe('POST /challenges', () => {
     });
 
     it('takes prize out of group if it has sufficient funds', async () => {
-      let oldUserBalance = groupLeader.balance;
-      let oldGroupBalance = group.balance;
-      let prize = 4;
+      const oldUserBalance = groupLeader.balance;
+      const oldGroupBalance = group.balance;
+      const prize = 4;
 
       await groupLeader.post('/challenges', {
         group: group._id,
@@ -169,8 +159,8 @@ describe('POST /challenges', () => {
     });
 
     it('takes prize out of both group and user if group doesn\'t have enough', async () => {
-      let oldUserBalance = groupLeader.balance;
-      let prize = 8;
+      const oldUserBalance = groupLeader.balance;
+      const prize = 8;
 
       await groupLeader.post('/challenges', {
         group: group._id,
@@ -180,14 +170,14 @@ describe('POST /challenges', () => {
       });
 
       await expect(group.sync()).to.eventually.have.property('balance', 0);
-      await expect(groupLeader.sync()).to.eventually.have.property('balance', oldUserBalance - (prize / 4  - 1));
+      await expect(groupLeader.sync()).to.eventually.have.property('balance', oldUserBalance - (prize / 4 - 1));
     });
 
     it('takes prize out of user if group has no balance', async () => {
-      let oldUserBalance = groupLeader.balance;
-      let prize = 8;
+      const oldUserBalance = groupLeader.balance;
+      const prize = 8;
 
-      await group.update({ balance: 0});
+      await group.update({ balance: 0 });
       await groupLeader.post('/challenges', {
         group: group._id,
         name: 'Test Challenge',
@@ -200,7 +190,7 @@ describe('POST /challenges', () => {
     });
 
     it('increases challenge count of group', async () => {
-      let oldChallengeCount = group.challengeCount;
+      const oldChallengeCount = group.challengeCount;
 
       await groupLeader.post('/challenges', {
         group: group._id,
@@ -218,7 +208,7 @@ describe('POST /challenges', () => {
         },
       });
 
-      let challenge = await groupLeader.post('/challenges', {
+      const challenge = await groupLeader.post('/challenges', {
         group: group._id,
         name: 'Test Challenge',
         shortName: 'TC Label',
@@ -229,7 +219,7 @@ describe('POST /challenges', () => {
     });
 
     it('doesn\'t set challenge as official if official flag is set by non-admin', async () => {
-      let challenge = await groupLeader.post('/challenges', {
+      const challenge = await groupLeader.post('/challenges', {
         group: group._id,
         name: 'Test Challenge',
         shortName: 'TC Label',
@@ -240,10 +230,9 @@ describe('POST /challenges', () => {
     });
 
     it('returns an error when challenge validation fails; doesn\'s save user or group', async () => {
-      let oldChallengeCount = group.challengeCount;
-      let oldUserBalance = groupLeader.balance;
-      let oldUserChallenges = groupLeader.challenges;
-      let oldGroupBalance = group.balance;
+      const oldChallengeCount = group.challengeCount;
+      const oldUserBalance = groupLeader.balance;
+      const oldGroupBalance = group.balance;
 
       await expect(groupLeader.post('/challenges', {
         group: group._id,
@@ -260,16 +249,15 @@ describe('POST /challenges', () => {
       expect(group.challengeCount).to.eql(oldChallengeCount);
       expect(group.balance).to.eql(oldGroupBalance);
       expect(groupLeader.balance).to.eql(oldUserBalance);
-      expect(groupLeader.challenges).to.eql(oldUserChallenges);
     });
 
-    it('sets all properites of the challenge as passed', async () => {
-      let name = 'Test Challenge';
-      let shortName = 'TC Label';
-      let description = 'Test Description';
-      let prize = 4;
+    it('sets all properties of the challenge as passed', async () => {
+      const name = 'Test Challenge';
+      const shortName = 'TC Label';
+      const description = 'Test Description';
+      const prize = 4;
 
-      let challenge = await groupLeader.post('/challenges', {
+      const challenge = await groupLeader.post('/challenges', {
         group: group._id,
         name,
         shortName,
@@ -279,7 +267,7 @@ describe('POST /challenges', () => {
 
       expect(challenge.leader).to.eql({
         _id: groupLeader._id,
-        profile: {name: groupLeader.profile.name},
+        profile: { name: groupLeader.profile.name },
       });
       expect(challenge.name).to.eql(name);
       expect(challenge.shortName).to.eql(shortName);
@@ -291,18 +279,57 @@ describe('POST /challenges', () => {
         name: group.name,
         type: group.type,
       });
-      expect(challenge.memberCount).to.eql(1);
+      expect(challenge.memberCount).to.eql(0);
       expect(challenge.prize).to.eql(prize);
     });
 
-    it('adds challenge to creator\'s challenges', async () => {
-      let challenge = await groupLeader.post('/challenges', {
+    it('does not add challenge to creator\'s challenges', async () => {
+      await groupLeader.post('/challenges', {
         group: group._id,
         name: 'Test Challenge',
         shortName: 'TC Label',
       });
 
-      await expect(groupLeader.sync()).to.eventually.have.property('challenges').to.include(challenge._id);
+      await groupLeader.sync();
+      expect(groupLeader.challenges.length).to.equal(0);
+    });
+
+    it('does not award joinedChallenge achievement for creating a challenge', async () => {
+      await groupLeader.post('/challenges', {
+        group: group._id,
+        name: 'Test Challenge',
+        shortName: 'TC Label',
+      });
+      groupLeader = await groupLeader.sync();
+      expect(groupLeader.achievements.joinedChallenge).to.not.be.true;
+    });
+
+    it('sets summary to challenges name when not supplied', async () => {
+      const name = 'Test Challenge';
+      const challenge = await groupLeader.post('/challenges', {
+        group: group._id,
+        name,
+        shortName: 'TC Label',
+      });
+
+      const updatedChallenge = await groupLeader.get(`/challenges/${challenge._id}`);
+
+      expect(updatedChallenge.summary).to.eql(name);
+    });
+
+    it('sets summary to challenges', async () => {
+      const name = 'Test Challenge';
+      const summary = 'Test Summary Challenge';
+      const challenge = await groupLeader.post('/challenges', {
+        group: group._id,
+        name,
+        shortName: 'TC Label',
+        summary,
+      });
+
+      const updatedChallenge = await groupLeader.get(`/challenges/${challenge._id}`);
+
+      expect(updatedChallenge.summary).to.eql(summary);
     });
   });
 });

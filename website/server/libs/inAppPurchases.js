@@ -1,6 +1,6 @@
 import nconf from 'nconf';
+import util from 'util';
 import iap from 'in-app-purchase';
-import Bluebird from 'bluebird';
 
 // Validation ERROR Codes
 // const INVALID_PAYLOAD = 6778001;
@@ -10,15 +10,16 @@ import Bluebird from 'bluebird';
 iap.config({
   // This is the path to the directory containing iap-sanbox/iap-live files
   googlePublicKeyPath: nconf.get('IAP_GOOGLE_KEYDIR'),
-  googleAccToken: nconf.get('PLAY_API:ACCESS_TOKEN'),
-  googleRefToken: nconf.get('PLAY_API:REFRESH_TOKEN'),
-  googleClientID: nconf.get('PLAY_API:CLIENT_ID'),
-  googleClientSecret: nconf.get('PLAY_API:CLIENT_SECRET'),
+  googleAccToken: nconf.get('PLAY_API_ACCESS_TOKEN'),
+  googleRefToken: nconf.get('PLAY_API_REFRESH_TOKEN'),
+  googleClientID: nconf.get('PLAY_API_CLIENT_ID'),
+  googleClientSecret: nconf.get('PLAY_API_CLIENT_SECRET'),
+  applePassword: nconf.get('ITUNES_SHARED_SECRET'),
 });
 
-module.exports = {
-  setup: Bluebird.promisify(iap.setup, { context: iap }),
-  validate: Bluebird.promisify(iap.validate, { context: iap }),
+export default {
+  setup: util.promisify(iap.setup.bind(iap)),
+  validate: util.promisify(iap.validate.bind(iap)),
   isValidated: iap.isValidated,
   getPurchaseData: iap.getPurchaseData,
   GOOGLE: iap.GOOGLE,

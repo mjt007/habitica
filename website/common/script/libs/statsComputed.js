@@ -1,24 +1,30 @@
-import _ from 'lodash';
-import content from '../content/index';
+import each from 'lodash/each';
+import get from 'lodash/get';
+import values from 'lodash/values';
+import content from '../content/index'; // eslint-disable-line import/no-cycle
 import * as statHelpers from '../statHelpers';
 
 function equipmentStatBonusComputed (stat, user) {
-  let gear = content.gear.flat;
+  const gear = content.gear.flat;
   let gearBonus = 0;
   let classBonus = 0;
 
   // toObject is required here due to lodash values not working well with mongoose doc objects.
-  // if toObject doesn't exist, we're on the client side and can assume the object is already plain JSON
+  // if toObject doesn't exist, we can assume the object is already plain JSON
   // see http://stackoverflow.com/questions/25767334/underscore-js-keys-and-omit-not-working-as-expected
-  let equipped = user.items.gear.equipped;
-  let equippedKeys = !equipped.toObject ? _.values(equipped) : _.values(equipped.toObject());
+  const { equipped } = user.items.gear;
+  const equippedKeys = values(!equipped.toObject ? equipped : equipped.toObject());
 
-  _.each(equippedKeys, (equippedItem) => {
-    let equipmentStat = gear[equippedItem][stat];
-    let classBonusMultiplier = gear[equippedItem].klass === user.stats.class ||
-      gear[equippedItem].specialClass === user.stats.class ? 0.5 : 0;
-    gearBonus += equipmentStat;
-    classBonus += equipmentStat * classBonusMultiplier;
+  each(equippedKeys, equippedItem => {
+    const item = gear[equippedItem];
+
+    if (item) {
+      const equipmentStat = item[stat];
+      const classBonusMultiplier = item.klass === user.stats.class
+        || item.specialClass === user.stats.class ? 0.5 : 0;
+      gearBonus += equipmentStat;
+      classBonus += equipmentStat * classBonusMultiplier;
+    }
   });
 
   return {
@@ -27,18 +33,18 @@ function equipmentStatBonusComputed (stat, user) {
   };
 }
 
-module.exports = function statsComputed (user) {
-  let statBreakdown = {
+export default function statsComputed (user) {
+  const statBreakdown = {
     gearBonus: {},
     classBonus: {},
     baseStat: {},
     buff: {},
     levelBonus: {},
   };
-  _.each(['per', 'con', 'str', 'int'], (stat) => {
-    let baseStat = _.get(user, 'stats')[stat];
-    let buff = _.get(user, 'stats.buffs')[stat];
-    let equipmentBonus = equipmentStatBonusComputed(stat, user);
+  each(['per', 'con', 'str', 'int'], stat => {
+    const baseStat = get(user, 'stats')[stat];
+    const buff = get(user, 'stats.buffs')[stat];
+    const equipmentBonus = equipmentStatBonusComputed(stat, user);
 
     statBreakdown[stat] = equipmentBonus.gearBonus + equipmentBonus.classBonus + baseStat + buff;
     statBreakdown[stat] += Math.floor(statHelpers.capByLevel(user.stats.lvl) / 2);
@@ -53,4 +59,4 @@ module.exports = function statsComputed (user) {
   statBreakdown.maxMP = statBreakdown.int * 2 + 30;
 
   return statBreakdown;
-};
+}

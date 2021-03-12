@@ -1,17 +1,17 @@
 // The error handler middleware that handles all errors
 // and respond to the client
+import {
+  map,
+  omit,
+} from 'lodash';
 import logger from '../libs/logger';
 import {
   CustomError,
   BadRequest,
   InternalServerError,
 } from '../libs/errors';
-import {
-  map,
-  omit,
-} from 'lodash';
 
-module.exports = function errorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
+export default function errorHandler (err, req, res, next) { // eslint-disable-line no-unused-vars
   // In case of a CustomError class, use it's data
   // Otherwise try to identify the type of error (mongoose validation, mongodb unique, ...)
   // If we can't identify it, respond with a generic 500 error
@@ -28,25 +28,22 @@ module.exports = function errorHandler (err, req, res, next) { // eslint-disable
   // Handle errors by express-validator
   if (Array.isArray(err) && err[0].param && err[0].msg) {
     responseErr = new BadRequest(res.t('invalidReqParams'));
-    responseErr.errors = err.map((paramErr) => {
-      return {
-        message: paramErr.msg,
-        param: paramErr.param,
-        value: paramErr.value,
-      };
-    });
+    responseErr.errors = err.map(paramErr => ({
+      message: paramErr.msg,
+      param: paramErr.param,
+      value: paramErr.value,
+    }));
   }
 
   // Handle mongoose validation errors
   if (err.name === 'ValidationError') {
-    responseErr = new BadRequest(err.message); // TODO standard message? translate?
-    responseErr.errors = map(err.errors, (mongooseErr) => {
-      return {
-        message: mongooseErr.message,
-        path: mongooseErr.path,
-        value: mongooseErr.value,
-      };
-    });
+    const model = err.message.split(' ')[0];
+    responseErr = new BadRequest(`${model} validation failed`);
+    responseErr.errors = map(err.errors, mongooseErr => ({
+      message: mongooseErr.message,
+      path: mongooseErr.path,
+      value: mongooseErr.value,
+    }));
   }
 
   // Handle Stripe Card errors errors (can be safely shown to the users)
@@ -68,13 +65,17 @@ module.exports = function errorHandler (err, req, res, next) { // eslint-disable
   logger.error(err, {
     method: req.method,
     originalUrl: req.originalUrl,
-    headers: omit(req.headers, ['x-api-key', 'cookie']), // don't send sensitive information that only adds noise
-    body: req.body,
+
+    // don't send sensitive information that only adds noise
+    headers: omit(req.headers, ['x-api-key', 'cookie', 'password', 'confirmPassword']),
+    body: omit(req.body, ['password', 'confirmPassword']),
+    query: omit(req.query, ['password', 'confirmPassword']),
+
     httpCode: responseErr.httpCode,
     isHandledError: responseErr.httpCode < 500,
   });
 
-  let jsonRes = {
+  const jsonRes = {
     success: false,
     error: responseErr.name,
     message: responseErr.message,
@@ -84,7 +85,7 @@ module.exports = function errorHandler (err, req, res, next) { // eslint-disable
     jsonRes.errors = responseErr.errors;
   }
 
-  // In some occasions like when invalid JSON is supplied `res.respond` might be not yet avalaible,
+  // In some occasions like when invalid JSON is supplied `res.respond` might be not yet available,
   // in this case we use the standard res.status(...).json(...)
   return res.status(responseErr.httpCode).json(jsonRes);
-};
+}

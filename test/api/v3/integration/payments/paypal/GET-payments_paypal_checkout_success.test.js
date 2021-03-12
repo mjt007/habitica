@@ -1,11 +1,11 @@
 import {
   generateUser,
-  translate as t,
 } from '../../../../../helpers/api-integration/v3';
-import paypalPayments from '../../../../../../website/server/libs/paypalPayments';
+import paypalPayments from '../../../../../../website/server/libs/payments/paypal';
+import apiError from '../../../../../../website/server/libs/apiError';
 
 describe('payments : paypal #checkoutSuccess', () => {
-  let endpoint = '/paypal/checkout/success';
+  const endpoint = '/paypal/checkout/success';
   let user;
 
   beforeEach(async () => {
@@ -17,7 +17,7 @@ describe('payments : paypal #checkoutSuccess', () => {
       .to.eventually.be.rejected.and.eql({
         code: 400,
         error: 'BadRequest',
-        message: t('missingPaymentId'),
+        message: apiError('missingPaymentId'),
       });
   });
 
@@ -26,7 +26,7 @@ describe('payments : paypal #checkoutSuccess', () => {
       .to.eventually.be.rejected.and.eql({
         code: 400,
         error: 'BadRequest',
-        message: t('missingCustomerId'),
+        message: apiError('missingCustomerId'),
       });
   });
 
@@ -34,7 +34,7 @@ describe('payments : paypal #checkoutSuccess', () => {
     let checkoutSuccessStub;
 
     beforeEach(async () => {
-      checkoutSuccessStub = sinon.stub(paypalPayments, 'checkoutSuccess').returnsPromise().resolves({});
+      checkoutSuccessStub = sinon.stub(paypalPayments, 'checkoutSuccess').resolves({});
     });
 
     afterEach(() => {
@@ -42,8 +42,8 @@ describe('payments : paypal #checkoutSuccess', () => {
     });
 
     it('makes a purchase', async () => {
-      let paymentId = 'test-paymentid';
-      let customerId = 'test-customerId';
+      const paymentId = 'test-paymentid';
+      const customerId = 'test-customerId';
 
       user = await generateUser({
         'profile.name': 'sender',
@@ -53,7 +53,7 @@ describe('payments : paypal #checkoutSuccess', () => {
         balance: 2,
       });
 
-      await user.get(`${endpoint}?PayerID=${customerId}&paymentId=${paymentId}`);
+      await user.get(`${endpoint}?PayerID=${customerId}&paymentId=${paymentId}&noRedirect=true`);
 
       expect(checkoutSuccessStub).to.be.calledOnce;
 

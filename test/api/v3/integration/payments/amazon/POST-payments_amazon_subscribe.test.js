@@ -3,11 +3,12 @@ import {
   generateGroup,
   translate as t,
 } from '../../../../../helpers/api-integration/v3';
-import amzLib from '../../../../../../website/server/libs/amazonPayments';
+import amzLib from '../../../../../../website/server/libs/payments/amazon';
 
 describe('payments - amazon - #subscribe', () => {
-  let endpoint = '/amazon/subscribe';
-  let user, group, subscribeWithAmazonStub;
+  const endpoint = '/amazon/subscribe';
+  let user; let group; let
+    subscribeWithAmazonStub;
 
   beforeEach(async () => {
     user = await generateUser();
@@ -22,12 +23,12 @@ describe('payments - amazon - #subscribe', () => {
   });
 
   describe('success', () => {
-    let billingAgreementId = 'billingAgreementId-example';
-    let subscription = 'basic_3mo';
+    const billingAgreementId = 'billingAgreementId-example';
+    const subscription = 'basic_3mo';
     let coupon;
 
     beforeEach(() => {
-      subscribeWithAmazonStub = sinon.stub(amzLib, 'subscribe').returnsPromise().resolves({});
+      subscribeWithAmazonStub = sinon.stub(amzLib, 'subscribe').resolves({});
     });
 
     afterEach(() => {

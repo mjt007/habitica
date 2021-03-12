@@ -2,15 +2,25 @@ import {
   generateUser,
   translate as t,
 } from '../../../../helpers/api-integration/v3';
+import content from '../../../../../website/common/script/content/index';
 
 describe('POST /user/release-pets', () => {
   let user;
-  let animal = 'Wolf-Base';
+  const animal = 'Wolf-Base';
+
+  const loadPets = () => {
+    const pets = {};
+    Object.keys(content.pets).forEach(p => {
+      pets[p] = content.pets[p];
+      pets[p] = 5;
+    });
+    return pets;
+  };
 
   beforeEach(async () => {
     user = await generateUser({
       'items.currentPet': animal,
-      'items.pets': {animal: 5},
+      'items.pets': loadPets(),
     });
   });
 
@@ -30,7 +40,7 @@ describe('POST /user/release-pets', () => {
       balance: 1,
     });
 
-    let response = await user.post('/user/release-pets');
+    const response = await user.post('/user/release-pets');
     await user.sync();
 
     expect(response.message).to.equal(t('petsReleased'));

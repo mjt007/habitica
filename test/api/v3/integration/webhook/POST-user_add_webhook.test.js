@@ -1,11 +1,13 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
   translate as t,
 } from '../../../../helpers/api-integration/v3';
-import { v4 as generateUUID } from 'uuid';
+import apiError from '../../../../../website/server/libs/apiError';
 
 describe('POST /user/webhook', () => {
-  let user, body;
+  let user; let
+    body;
 
   beforeEach(async () => {
     user = await generateUser();
@@ -40,7 +42,7 @@ describe('POST /user/webhook', () => {
   it('defaults id to a uuid', async () => {
     delete body.id;
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.id).to.exist;
   });
@@ -58,7 +60,7 @@ describe('POST /user/webhook', () => {
   it('defaults enabled to true', async () => {
     delete body.enabled;
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.enabled).to.be.true;
   });
@@ -66,7 +68,7 @@ describe('POST /user/webhook', () => {
   it('can pass a label', async () => {
     body.label = 'Custom Label';
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.label).to.equal('Custom Label');
   });
@@ -74,15 +76,25 @@ describe('POST /user/webhook', () => {
   it('defaults type to taskActivity', async () => {
     delete body.type;
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.type).to.eql('taskActivity');
+  });
+
+  it('ignores protected fields', async () => {
+    body.failures = 3;
+    body.lastFailureAt = new Date();
+
+    const webhook = await user.post('/user/webhook', body);
+
+    expect(webhook.failures).to.eql(0);
+    expect(webhook.lastFailureAt).to.eql(undefined);
   });
 
   it('successfully adds the webhook', async () => {
     expect(user.webhooks).to.eql([]);
 
-    let response = await user.post('/user/webhook', body);
+    const response = await user.post('/user/webhook', body);
 
     expect(response.id).to.eql(body.id);
     expect(response.type).to.eql(body.type);
@@ -93,7 +105,7 @@ describe('POST /user/webhook', () => {
 
     expect(user.webhooks).to.not.eql([]);
 
-    let webhook = user.webhooks[0];
+    const webhook = user.webhooks[0];
 
     expect(webhook.enabled).to.be.false;
     expect(webhook.type).to.eql('taskActivity');
@@ -113,9 +125,10 @@ describe('POST /user/webhook', () => {
   it('defaults taskActivity options', async () => {
     body.type = 'taskActivity';
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.options).to.eql({
+      checklistScored: false,
       created: false,
       updated: false,
       deleted: false,
@@ -126,15 +139,17 @@ describe('POST /user/webhook', () => {
   it('can set taskActivity options', async () => {
     body.type = 'taskActivity';
     body.options = {
+      checklistScored: true,
       created: true,
       updated: true,
       deleted: true,
       scored: false,
     };
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.options).to.eql({
+      checklistScored: true,
       created: true,
       updated: true,
       deleted: true,
@@ -145,6 +160,7 @@ describe('POST /user/webhook', () => {
   it('discards extra properties in taskActivity options', async () => {
     body.type = 'taskActivity';
     body.options = {
+      checklistScored: false,
       created: true,
       updated: true,
       deleted: true,
@@ -152,10 +168,11 @@ describe('POST /user/webhook', () => {
       foo: 'bar',
     };
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.options.foo).to.not.exist;
     expect(webhook.options).to.eql({
+      checklistScored: false,
       created: true,
       updated: true,
       deleted: true,
@@ -163,7 +180,7 @@ describe('POST /user/webhook', () => {
     });
   });
 
-  ['created', 'updated', 'deleted', 'scored'].forEach((option) => {
+  ['created', 'updated', 'deleted', 'scored'].forEach(option => {
     it(`requires taskActivity option ${option} to be a boolean`, async () => {
       body.type = 'taskActivity';
       body.options = {
@@ -184,7 +201,7 @@ describe('POST /user/webhook', () => {
       groupId: generateUUID(),
     };
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.options).to.eql({
       groupId: body.options.groupId,
@@ -200,7 +217,7 @@ describe('POST /user/webhook', () => {
     await expect(user.post('/user/webhook', body)).to.eventually.be.rejected.and.eql({
       code: 400,
       error: 'BadRequest',
-      message: t('groupIdRequired'),
+      message: apiError('groupIdRequired'),
     });
   });
 
@@ -211,11 +228,86 @@ describe('POST /user/webhook', () => {
       foo: 'bar',
     };
 
-    let webhook = await user.post('/user/webhook', body);
+    const webhook = await user.post('/user/webhook', body);
 
     expect(webhook.options.foo).to.not.exist;
     expect(webhook.options).to.eql({
       groupId: body.options.groupId,
     });
+  });
+
+  it('defaults questActivity options', async () => {
+    body.type = 'questActivity';
+
+    const webhook = await user.post('/user/webhook', body);
+
+    expect(webhook.options).to.eql({
+      questStarted: false,
+      questFinished: false,
+      questInvited: false,
+    });
+  });
+
+  it('can set questActivity options', async () => {
+    body.type = 'questActivity';
+    body.options = {
+      questStarted: true,
+      questFinished: true,
+      questInvited: true,
+    };
+
+    const webhook = await user.post('/user/webhook', body);
+
+    expect(webhook.options).to.eql({
+      questStarted: true,
+      questFinished: true,
+      questInvited: true,
+    });
+  });
+
+  it('discards extra properties in questActivity options', async () => {
+    body.type = 'questActivity';
+    body.options = {
+      questStarted: false,
+      questFinished: true,
+      questInvited: true,
+      foo: 'bar',
+    };
+
+    const webhook = await user.post('/user/webhook', body);
+
+    expect(webhook.options.foo).to.not.exist;
+    expect(webhook.options).to.eql({
+      questStarted: false,
+      questFinished: true,
+      questInvited: true,
+    });
+  });
+
+  ['questStarted', 'questFinished', 'questInvited'].forEach(option => {
+    it(`requires questActivity option ${option} to be a boolean`, async () => {
+      body.type = 'questActivity';
+      body.options = {
+        [option]: 'not a boolean',
+      };
+
+      await expect(user.post('/user/webhook', body)).to.eventually.be.rejected.and.eql({
+        code: 400,
+        error: 'BadRequest',
+        message: t('webhookBooleanOption', { option }),
+      });
+    });
+  });
+
+  it('discards extra properties in globalActivity options', async () => {
+    body.type = 'globalActivity';
+    body.options = {
+      foo: 'bar',
+    };
+
+    const webhook = await user.post('/user/webhook', body);
+
+    expect(webhook.options.foo).to.not.exist;
+    expect(webhook.options).to.eql({});
   });
 });

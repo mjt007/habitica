@@ -1,14 +1,14 @@
+import moment from 'moment';
 import {
   generateUser,
   translate as t,
 } from '../../../../../helpers/api-integration/v3';
 import {
-  sha1MakeSalt,
-  sha1Encrypt as sha1EncryptPassword,
-} from '../../../../../../website/server/libs/password';
+  decrypt,
+} from '../../../../../../website/server/libs/encryption';
 
 describe('POST /user/reset-password', async () => {
-  let endpoint = '/user/reset-password';
+  const endpoint = '/user/reset-password';
   let user;
 
   beforeEach(async () => {
@@ -16,8 +16,8 @@ describe('POST /user/reset-password', async () => {
   });
 
   it('resets password', async () => {
-    let previousPassword = user.auth.local.hashed_password;
-    let response = await user.post(endpoint, {
+    const previousPassword = user.auth.local.hashed_password;
+    const response = await user.post(endpoint, {
       email: user.auth.local.email,
     });
     expect(response).to.eql({ data: {}, message: t('passwordReset') });
@@ -25,35 +25,8 @@ describe('POST /user/reset-password', async () => {
     expect(user.auth.local.hashed_password).to.not.eql(previousPassword);
   });
 
-  it('converts user with SHA1 encrypted password to bcrypt encryption', async () => {
-    let textPassword = 'mySecretPassword';
-    let salt = sha1MakeSalt();
-    let sha1HashedPassword = sha1EncryptPassword(textPassword, salt);
-
-    await user.update({
-      'auth.local.hashed_password': sha1HashedPassword,
-      'auth.local.passwordHashMethod': 'sha1',
-      'auth.local.salt': salt,
-    });
-
-    await user.sync();
-    expect(user.auth.local.passwordHashMethod).to.equal('sha1');
-    expect(user.auth.local.salt).to.equal(salt);
-    expect(user.auth.local.hashed_password).to.equal(sha1HashedPassword);
-
-    // update email
-    await user.post(endpoint, {
-      email: user.auth.local.email,
-    });
-
-    await user.sync();
-    expect(user.auth.local.passwordHashMethod).to.equal('bcrypt');
-    expect(user.auth.local.salt).to.be.undefined;
-    expect(user.auth.local.hashed_password).not.to.equal(sha1HashedPassword);
-  });
-
   it('same message on error as on success', async () => {
-    let response = await user.post(endpoint, {
+    const response = await user.post(endpoint, {
       email: 'nonExistent@email.com',
     });
     expect(response).to.eql({ data: {}, message: t('passwordReset') });
@@ -65,5 +38,20 @@ describe('POST /user/reset-password', async () => {
       error: 'BadRequest',
       message: t('invalidReqParams'),
     });
+  });
+
+  it('sets a new password reset code on user.auth.local that expires in 1 day', async () => {
+    expect(user.auth.local.passwordResetCode).to.be.undefined;
+
+    await user.post(endpoint, {
+      email: user.auth.local.email,
+    });
+
+    await user.sync();
+
+    expect(user.auth.local.passwordResetCode).to.be.a.string;
+    const decryptedCode = JSON.parse(decrypt(user.auth.local.passwordResetCode));
+    expect(decryptedCode.userId).to.equal(user._id);
+    expect(moment(decryptedCode.expiresAt).isAfter(moment().add({ hours: 23 }))).to.equal(true);
   });
 });

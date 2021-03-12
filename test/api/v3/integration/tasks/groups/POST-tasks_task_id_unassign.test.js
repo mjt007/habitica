@@ -1,20 +1,21 @@
+import { v4 as generateUUID } from 'uuid';
+import { find } from 'lodash';
 import {
   generateUser,
   createAndPopulateGroup,
   translate as t,
-} from '../../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
-import { find } from 'lodash';
+} from '../../../../../helpers/api-integration/v3';
 
 describe('POST /tasks/:taskId/unassign/:memberId', () => {
-  let user, guild, member, member2, task;
+  let user; let guild; let member; let member2; let
+    task;
 
   function findAssignedTask (memberTask) {
     return memberTask.group.id === guild._id;
   }
 
   beforeEach(async () => {
-    let {group, members, groupLeader} = await createAndPopulateGroup({
+    const { group, members, groupLeader } = await createAndPopulateGroup({
       groupDetails: {
         name: 'Test Guild',
         type: 'guild',
@@ -24,8 +25,8 @@ describe('POST /tasks/:taskId/unassign/:memberId', () => {
 
     guild = group;
     user = groupLeader;
-    member = members[0];
-    member2 = members[1];
+    member = members[0]; // eslint-disable-line prefer-destructuring
+    member2 = members[1]; // eslint-disable-line prefer-destructuring
 
     task = await user.post(`/tasks/group/${guild._id}`, {
       text: 'test habit',
@@ -48,7 +49,7 @@ describe('POST /tasks/:taskId/unassign/:memberId', () => {
   });
 
   it('returns error when task is not a group task', async () => {
-    let nonGroupTask = await user.post('/tasks/user', {
+    const nonGroupTask = await user.post('/tasks/user', {
       text: 'test habit',
       type: 'habit',
       up: false,
@@ -65,7 +66,7 @@ describe('POST /tasks/:taskId/unassign/:memberId', () => {
   });
 
   it('returns error when user is not a member of the group', async () => {
-    let nonUser = await generateUser();
+    const nonUser = await generateUser();
 
     await expect(nonUser.post(`/tasks/${task._id}/unassign/${member._id}`))
       .to.eventually.be.rejected.and.eql({
@@ -75,24 +76,22 @@ describe('POST /tasks/:taskId/unassign/:memberId', () => {
       });
   });
 
-  it('returns error when non leader tries to create a task', async () => {
-    await expect(member.post(`/tasks/${task._id}/unassign/${member._id}`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('onlyGroupLeaderCanEditTasks'),
-      });
-  });
-
   it('unassigns a user from a task', async () => {
     await user.post(`/tasks/${task._id}/unassign/${member._id}`);
 
-    let groupTask = await user.get(`/tasks/group/${guild._id}`);
-    let memberTasks = await member.get('/tasks/user');
-    let syncedTask = find(memberTasks, findAssignedTask);
+    const groupTask = await user.get(`/tasks/group/${guild._id}`);
+    const memberTasks = await member.get('/tasks/user');
+    const syncedTask = find(memberTasks, findAssignedTask);
 
     expect(groupTask[0].group.assignedUsers).to.not.contain(member._id);
     expect(syncedTask).to.not.exist;
+  });
+
+  it('removes task assignment notification from unassigned user', async () => {
+    await user.post(`/tasks/${task._id}/unassign/${member._id}`);
+
+    await member.sync();
+    expect(member.notifications.length).to.equal(0);
   });
 
   it('unassigns a user and only that user from a task', async () => {
@@ -100,18 +99,55 @@ describe('POST /tasks/:taskId/unassign/:memberId', () => {
 
     await user.post(`/tasks/${task._id}/unassign/${member._id}`);
 
-    let groupTask = await user.get(`/tasks/group/${guild._id}`);
+    const groupTask = await user.get(`/tasks/group/${guild._id}`);
 
-    let memberTasks = await member.get('/tasks/user');
-    let member1SyncedTask = find(memberTasks, findAssignedTask);
+    const memberTasks = await member.get('/tasks/user');
+    const member1SyncedTask = find(memberTasks, findAssignedTask);
 
-    let member2Tasks = await member2.get('/tasks/user');
-    let member2SyncedTask = find(member2Tasks, findAssignedTask);
+    const member2Tasks = await member2.get('/tasks/user');
+    const member2SyncedTask = find(member2Tasks, findAssignedTask);
 
     expect(groupTask[0].group.assignedUsers).to.not.contain(member._id);
     expect(member1SyncedTask).to.not.exist;
 
     expect(groupTask[0].group.assignedUsers).to.contain(member2._id);
     expect(member2SyncedTask).to.exist;
+  });
+
+  it('allows a manager to unassign a user from a task', async () => {
+    await user.post(`/groups/${guild._id}/add-manager`, {
+      managerId: member2._id,
+    });
+
+    await member2.post(`/tasks/${task._id}/unassign/${member._id}`);
+
+    const groupTask = await member2.get(`/tasks/group/${guild._id}`);
+    const memberTasks = await member.get('/tasks/user');
+    const syncedTask = find(memberTasks, findAssignedTask);
+
+    expect(groupTask[0].group.assignedUsers).to.not.contain(member._id);
+    expect(syncedTask).to.not.exist;
+  });
+
+  it('allows a user to unassign themselves', async () => {
+    await member.post(`/tasks/${task._id}/unassign/${member._id}`);
+
+    const groupTask = await user.get(`/tasks/group/${guild._id}`);
+    const memberTasks = await member.get('/tasks/user');
+    const syncedTask = find(memberTasks, findAssignedTask);
+
+    expect(groupTask[0].group.assignedUsers).to.not.contain(member._id);
+    expect(syncedTask).to.not.exist;
+  });
+
+  // @TODO: Which do we want? The user to unassign themselves or not. This test was in
+  // here, but then we had a request to allow to unaissgn.
+  xit('returns error when non leader tries to unassign their a task', async () => {
+    await expect(member.post(`/tasks/${task._id}/unassign/${member._id}`))
+      .to.eventually.be.rejected.and.eql({
+        code: 401,
+        error: 'NotAuthorized',
+        message: t('onlyGroupLeaderCanEditTasks'),
+      });
   });
 });

@@ -1,9 +1,10 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   createAndPopulateGroup,
   translate as t,
   generateUser,
-} from '../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
+} from '../../../../helpers/api-integration/v3';
+import { model as Group } from '../../../../../website/server/models/group';
 
 describe('POST /groups/:groupId/quests/cancel', () => {
   let questingGroup;
@@ -14,7 +15,7 @@ describe('POST /groups/:groupId/quests/cancel', () => {
   const PET_QUEST = 'whale';
 
   beforeEach(async () => {
-    let { group, groupLeader, members } = await createAndPopulateGroup({
+    const { group, groupLeader, members } = await createAndPopulateGroup({
       groupDetails: { type: 'party', privacy: 'private' },
       members: 2,
     });
@@ -41,24 +42,24 @@ describe('POST /groups/:groupId/quests/cancel', () => {
 
     it('does not reject quest for a group in which user is not a member', async () => {
       await expect(user.post(`/groups/${questingGroup._id}/quests/cancel`))
-      .to.eventually.be.rejected.and.eql({
-        code: 404,
-        error: 'NotFound',
-        message: t('groupNotFound'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 404,
+          error: 'NotFound',
+          message: t('groupNotFound'),
+        });
     });
 
     it('returns an error when group is a guild', async () => {
-      let { group: guild, groupLeader: guildLeader } = await createAndPopulateGroup({
+      const { group: guild, groupLeader: guildLeader } = await createAndPopulateGroup({
         groupDetails: { type: 'guild', privacy: 'private' },
       });
 
       await expect(guildLeader.post(`/groups/${guild._id}/quests/cancel`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('guildQuestsNotSupported'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 401,
+          error: 'NotAuthorized',
+          message: t('guildQuestsNotSupported'),
+        });
     });
 
     it('returns an error when group is not on a quest', async () => {
@@ -74,11 +75,11 @@ describe('POST /groups/:groupId/quests/cancel', () => {
       await leader.post(`/groups/${questingGroup._id}/quests/invite/${PET_QUEST}`);
 
       await expect(partyMembers[0].post(`/groups/${questingGroup._id}/quests/cancel`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('onlyLeaderCancelQuest'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 401,
+          error: 'NotAuthorized',
+          message: t('onlyLeaderCancelQuest'),
+        });
     });
 
     it('does not cancel a quest already underway', async () => {
@@ -88,19 +89,23 @@ describe('POST /groups/:groupId/quests/cancel', () => {
       await partyMembers[1].post(`/groups/${questingGroup._id}/quests/accept`);
 
       await expect(leader.post(`/groups/${questingGroup._id}/quests/cancel`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('cantCancelActiveQuest'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 401,
+          error: 'NotAuthorized',
+          message: t('cantCancelActiveQuest'),
+        });
     });
   });
 
   it('cancels a quest', async () => {
     await leader.post(`/groups/${questingGroup._id}/quests/invite/${PET_QUEST}`);
     await partyMembers[0].post(`/groups/${questingGroup._id}/quests/accept`);
+    // partyMembers[1] hasn't accepted the invitation, because if he accepts, invitation phase ends.
+    // The cancel command can be done only in the invitation phase.
 
-    let res = await leader.post(`/groups/${questingGroup._id}/quests/cancel`);
+    const stub = sandbox.spy(Group.prototype, 'sendChat');
+
+    const res = await leader.post(`/groups/${questingGroup._id}/quests/cancel`);
 
     await Promise.all([
       leader.sync(),
@@ -109,7 +114,7 @@ describe('POST /groups/:groupId/quests/cancel', () => {
       questingGroup.sync(),
     ]);
 
-    let clean = {
+    const clean = {
       key: null,
       progress: {
         up: 0,
@@ -135,5 +140,16 @@ describe('POST /groups/:groupId/quests/cancel', () => {
       },
       members: {},
     });
+    expect(Group.prototype.sendChat).to.be.calledOnce;
+    expect(Group.prototype.sendChat).to.be.calledWithMatch({
+      message: sinon.match(/cancelled the party quest Wail of the Whale.`/),
+      info: {
+        quest: 'whale',
+        type: 'quest_cancel',
+        user: sinon.match.any,
+      },
+    });
+
+    stub.restore();
   });
 });

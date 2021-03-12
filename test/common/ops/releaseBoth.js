@@ -10,18 +10,27 @@ import {
 
 describe('shared.ops.releaseBoth', () => {
   let user;
-  let animal = 'Wolf-Base';
+  const animal = 'Wolf-Base';
 
   beforeEach(() => {
     user = generateUser();
+    Object.keys(content.pets).forEach(p => {
+      user.items.pets[p] = content.pets[p];
+      user.items.pets[p] = 5;
+    });
+
+    Object.keys(content.pets).forEach(m => {
+      user.items.mounts[m] = content.pets[m];
+      user.items.mounts[m] = true;
+    });
+
     user.items.currentMount = animal;
     user.items.currentPet = animal;
-    user.items.pets[animal] = 5;
-    user.items.mounts[animal] = true;
-    user.balance = 1.5;
+
+    user.achievements.triadBingo = true;
   });
 
-  it('returns an error when user balance is too low and user does not have triadBingo', (done) => {
+  xit('returns an error when user balance is too low and user does not have triadBingo', done => {
     user.balance = 0;
 
     try {
@@ -33,8 +42,24 @@ describe('shared.ops.releaseBoth', () => {
     }
   });
 
+  it('returns an error when user does not have all pets', done => {
+    const petKeys = Object.keys(user.items.pets);
+    delete user.items.pets[petKeys[0]];
+
+    const mountKeys = Object.keys(user.items.mounts);
+    delete user.items.mounts[mountKeys[0]];
+
+    try {
+      releaseBoth(user);
+    } catch (err) {
+      expect(err).to.be.an.instanceof(NotAuthorized);
+      expect(err.message).to.equal(i18n.t('notEnoughPetsMounts'));
+      done();
+    }
+  });
+
   it('grants triad bingo with gems', () => {
-    let [, message] = releaseBoth(user);
+    const message = releaseBoth(user)[1];
 
     expect(message).to.equal(i18n.t('mountsAndPetsReleased'));
     expect(user.achievements.triadBingoCount).to.equal(1);
@@ -45,29 +70,92 @@ describe('shared.ops.releaseBoth', () => {
     user.achievements.triadBingo = 1;
     user.achievements.triadBingoCount = 1;
 
-    let [, message] = releaseBoth(user);
+    const message = releaseBoth(user)[1];
 
     expect(message).to.equal(i18n.t('mountsAndPetsReleased'));
     expect(user.achievements.triadBingoCount).to.equal(2);
   });
 
-  it('releases pets', () => {
-    let [, message] = releaseBoth(user);
+  it('does not grant triad bingo if any pet has not been previously found', () => {
+    const triadBingoCountBeforeRelease = user.achievements.triadBingoCount;
+    user.items.pets[animal] = -1;
+    const message = releaseBoth(user)[1];
 
     expect(message).to.equal(i18n.t('mountsAndPetsReleased'));
-    expect(user.items.pets[animal]).to.be.empty;
+    expect(user.achievements.triadBingoCount).to.equal(triadBingoCountBeforeRelease);
+  });
+
+  it('releases pets', () => {
+    const message = releaseBoth(user)[1];
+
+    expect(message).to.equal(i18n.t('mountsAndPetsReleased'));
+    expect(user.items.pets[animal]).to.equal(0);
     expect(user.items.mounts[animal]).to.equal(null);
+  });
+
+  it('does not increment beastMasterCount if any pet is level 0 (released)', () => {
+    const beastMasterCountBeforeRelease = user.achievements.beastMasterCount;
+    user.items.pets[animal] = 0;
+    try {
+      releaseBoth(user);
+    } catch (e) {
+      expect(user.achievements.beastMasterCount).to.equal(beastMasterCountBeforeRelease);
+    }
+  });
+
+  it('does not increment beastMasterCount if any pet is missing (null)', () => {
+    const beastMasterCountBeforeRelease = user.achievements.beastMasterCount;
+    user.items.pets[animal] = null;
+
+    try {
+      releaseBoth(user);
+    } catch (e) {
+      expect(user.achievements.beastMasterCount).to.equal(beastMasterCountBeforeRelease);
+    }
+  });
+
+  it('does not increment beastMasterCount if any pet is missing (undefined)', () => {
+    const beastMasterCountBeforeRelease = user.achievements.beastMasterCount;
+    delete user.items.pets[animal];
+
+    try {
+      releaseBoth(user);
+    } catch (e) {
+      expect(user.achievements.beastMasterCount).to.equal(beastMasterCountBeforeRelease);
+    }
   });
 
   it('releases mounts', () => {
-    let [, message] = releaseBoth(user);
+    const message = releaseBoth(user)[1];
 
     expect(message).to.equal(i18n.t('mountsAndPetsReleased'));
     expect(user.items.mounts[animal]).to.equal(null);
   });
 
+  it('does not increase mountMasterCount achievement if mount is missing (null)', () => {
+    const mountMasterCountBeforeRelease = user.achievements.mountMasterCount;
+    user.items.mounts[animal] = null;
+
+    try {
+      releaseBoth(user);
+    } catch (e) {
+      expect(user.achievements.mountMasterCount).to.equal(mountMasterCountBeforeRelease);
+    }
+  });
+
+  it('does not increase mountMasterCount achievement if mount is missing (undefined)', () => {
+    const mountMasterCountBeforeRelease = user.achievements.mountMasterCount;
+    delete user.items.mounts[animal];
+
+    try {
+      releaseBoth(user);
+    } catch (e) {
+      expect(user.achievements.mountMasterCount).to.equal(mountMasterCountBeforeRelease);
+    }
+  });
+
   it('removes drop currentPet', () => {
-    let petInfo = content.petInfo[user.items.currentPet];
+    const petInfo = content.petInfo[user.items.currentPet];
     expect(petInfo.type).to.equal('drop');
     releaseBoth(user);
 
@@ -76,7 +164,7 @@ describe('shared.ops.releaseBoth', () => {
   });
 
   it('removes drop currentMount', () => {
-    let mountInfo = content.mountInfo[user.items.currentMount];
+    const mountInfo = content.mountInfo[user.items.currentMount];
     expect(mountInfo.type).to.equal('drop');
     releaseBoth(user);
 
@@ -84,15 +172,15 @@ describe('shared.ops.releaseBoth', () => {
   });
 
   it('leaves non-drop pets and mounts equipped', () => {
-    let questAnimal = 'Gryphon-Base';
+    const questAnimal = 'Gryphon-Base';
     user.items.currentMount = questAnimal;
     user.items.currentPet = questAnimal;
     user.items.pets[questAnimal] = 5;
     user.items.mounts[questAnimal] = true;
 
-    let petInfo = content.petInfo[user.items.currentPet];
+    const petInfo = content.petInfo[user.items.currentPet];
     expect(petInfo.type).to.not.equal('drop');
-    let mountInfo = content.mountInfo[user.items.currentMount];
+    const mountInfo = content.mountInfo[user.items.currentMount];
     expect(mountInfo.type).to.not.equal('drop');
 
     releaseBoth(user);

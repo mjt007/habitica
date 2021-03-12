@@ -1,9 +1,8 @@
-'use strict';
-
-const MongoClient = require('mongodb').MongoClient;
+/* eslint-disable import/no-commonjs */
+const { MongoClient } = require('mongodb'); // eslint-disable-line import/no-extraneous-dependencies
 const logger = require('./logger');
 
-let db;
+let dbConnection;
 
 function connectToDb (dbUri) {
   return new Promise((resolve, reject) => {
@@ -13,17 +12,17 @@ function connectToDb (dbUri) {
         return reject(err);
       }
 
-      db = database;
+      dbConnection = database;
 
       logger.success(`Connected to ${dbUri}`);
 
-      resolve(database);
+      return resolve(database);
     });
   });
 }
 
 function closeDb () {
-  if (db) db.close();
+  if (dbConnection) dbConnection.close();
 
   logger.success('Closed connection to the database');
   return Promise.resolve();
@@ -32,4 +31,4 @@ function closeDb () {
 module.exports = {
   connectToDb,
   closeDb,
-}
+};

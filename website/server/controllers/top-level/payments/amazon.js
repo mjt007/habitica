@@ -1,14 +1,13 @@
 import {
   BadRequest,
 } from '../../../libs/errors';
-import amzLib from '../../../libs/amazonPayments';
+import amzLib from '../../../libs/payments/amazon';
 import {
   authWithHeaders,
-  authWithUrl,
 } from '../../../middlewares/auth';
 import shared from '../../../../common';
 
-let api = {};
+const api = {};
 
 /**
  * @apiIgnore Payments are considered part of the private API
@@ -17,13 +16,13 @@ let api = {};
  * @apiGroup Payments
  *
  * @apiSuccess {Object} data Empty object
- **/
+ * */
 api.verifyAccessToken = {
   method: 'POST',
   url: '/amazon/verifyAccessToken',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let accessToken = req.body.access_token;
+    const accessToken = req.body.access_token;
 
     if (!accessToken) throw new BadRequest('Missing req.body.access_token');
 
@@ -40,17 +39,17 @@ api.verifyAccessToken = {
  * @apiGroup Payments
  *
  * @apiSuccess {String} data.orderReferenceId The order reference id.
- **/
+ * */
 api.createOrderReferenceId = {
   method: 'POST',
   url: '/amazon/createOrderReferenceId',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let billingAgreementId = req.body.billingAgreementId;
+    const { billingAgreementId } = req.body;
 
     if (!billingAgreementId) throw new BadRequest('Missing req.body.billingAgreementId');
 
-    let response = await amzLib.createOrderReferenceId({
+    const response = await amzLib.createOrderReferenceId({
       Id: billingAgreementId,
       IdType: 'BillingAgreement',
       ConfirmNow: false,
@@ -69,19 +68,20 @@ api.createOrderReferenceId = {
  * @apiGroup Payments
  *
  * @apiSuccess {Object} data Empty object
- **/
+ * */
 api.checkout = {
   method: 'POST',
   url: '/amazon/checkout',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let gift = req.body.gift;
-    let user = res.locals.user;
-    let orderReferenceId = req.body.orderReferenceId;
+    const { user } = res.locals;
+    const { orderReferenceId, gift, gemsBlock } = req.body;
 
     if (!orderReferenceId) throw new BadRequest('Missing req.body.orderReferenceId');
 
-    await amzLib.checkout({gift, user, orderReferenceId, headers: req.headers});
+    await amzLib.checkout({
+      gemsBlock, gift, user, orderReferenceId, headers: req.headers,
+    });
 
     res.respond(200);
   },
@@ -94,17 +94,19 @@ api.checkout = {
  * @apiGroup Payments
  *
  * @apiSuccess {Object} data Empty object
- **/
+ * */
 api.subscribe = {
   method: 'POST',
   url: '/amazon/subscribe',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let billingAgreementId = req.body.billingAgreementId;
-    let sub = req.body.subscription ? shared.content.subscriptionBlocks[req.body.subscription] : false;
-    let coupon = req.body.coupon;
-    let user = res.locals.user;
-    let groupId = req.body.groupId;
+    const { billingAgreementId } = req.body;
+    const sub = req.body.subscription
+      ? shared.content.subscriptionBlocks[req.body.subscription]
+      : false;
+    const { coupon } = req.body;
+    const { user } = res.locals;
+    const { groupId } = req.body;
 
     await amzLib.subscribe({
       billingAgreementId,
@@ -124,16 +126,16 @@ api.subscribe = {
  * @api {get} /amazon/subscribe/cancel Amazon Payments: subscribe cancel
  * @apiName AmazonSubscribe
  * @apiGroup Payments
- **/
+ * */
 api.subscribeCancel = {
   method: 'GET',
   url: '/amazon/subscribe/cancel',
-  middlewares: [authWithUrl],
+  middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let groupId = req.query.groupId;
+    const { user } = res.locals;
+    const { groupId } = req.query;
 
-    await amzLib.cancelSubscription({user, groupId, headers: req.headers});
+    await amzLib.cancelSubscription({ user, groupId, headers: req.headers });
 
     if (req.query.noRedirect) {
       res.respond(200);
@@ -143,4 +145,4 @@ api.subscribeCancel = {
   },
 };
 
-module.exports = api;
+export default api;

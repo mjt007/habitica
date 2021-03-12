@@ -1,17 +1,13 @@
 import {
   authWithHeaders,
-  authWithUrl,
 } from '../../../middlewares/auth';
-import iap from '../../../libs/inAppPurchases';
-import payments from '../../../libs/payments';
 import {
   BadRequest,
 } from '../../../libs/errors';
-import { model as IapPurchaseReceipt } from '../../../models/iapPurchaseReceipt';
-import logger from '../../../libs/logger';
-import googlePayments from '../../../libs/googlePayments';
+import googlePayments from '../../../libs/payments/google';
+import applePayments from '../../../libs/payments/apple';
 
-let api = {};
+const api = {};
 
 // TODO missing tests
 
@@ -20,17 +16,20 @@ let api = {};
  * @api {post} /iap/android/verify Android Verify IAP
  * @apiName IapAndroidVerify
  * @apiGroup Payments
- **/
+ * */
 api.iapAndroidVerify = {
   method: 'POST',
   url: '/iap/android/verify',
-  middlewares: [authWithUrl],
+  middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let iapBody = req.body;
-
-    let googleRes = await googlePayments.verifyGemPurchase(user, iapBody.transaction.receipt, iapBody.transaction.signature, req.headers);
-
+    if (!req.body.transaction) throw new BadRequest(res.t('missingReceipt'));
+    const googleRes = await googlePayments.verifyGemPurchase({
+      user: res.locals.user,
+      receipt: req.body.transaction.receipt,
+      signature: req.body.transaction.signature,
+      gift: req.body.gift,
+      headers: req.headers,
+    });
     res.respond(200, googleRes);
   },
 };
@@ -40,17 +39,47 @@ api.iapAndroidVerify = {
  * @api {post} /iap/android/subscription Android Subscribe
  * @apiName IapAndroidSubscribe
  * @apiGroup Payments
- **/
+ * */
 api.iapSubscriptionAndroid = {
   method: 'POST',
   url: '/iap/android/subscribe',
-  middlewares: [authWithUrl],
+  middlewares: [authWithHeaders()],
   async handler (req, res) {
     if (!req.body.sku) throw new BadRequest(res.t('missingSubscriptionCode'));
-    let user = res.locals.user;
-    let iapBody = req.body;
+    await googlePayments.subscribe(
+      req.body.sku,
+      res.locals.user,
+      req.body.transaction.receipt,
+      req.body.transaction.signature,
+      req.headers,
+    );
 
-    await googlePayments.subscribe(req.body.sku, user, iapBody.transaction.receipt, iapBody.transaction.signature, req.headers);
+    res.respond(200);
+  },
+};
+
+/**
+ * @apiIgnore Payments are considered part of the private API
+ * @api {post} /iap/android/norenew-subscribe Android non-renewing subscription IAP
+ * @apiName iapSubscriptionAndroidNoRenew
+ * @apiGroup Payments
+ * */
+api.iapSubscriptionAndroidNoRenew = {
+  method: 'POST',
+  url: '/iap/android/norenew-subscribe',
+  middlewares: [authWithHeaders()],
+  async handler (req, res) {
+    if (!req.body.sku) throw new BadRequest(res.t('missingSubscriptionCode'));
+    if (!req.body.transaction) throw new BadRequest(res.t('missingReceipt'));
+
+    await googlePayments.noRenewSubscribe({
+      sku: req.body.sku,
+      user: res.locals.user,
+      receipt: req.body.transaction.receipt,
+      signature: req.body.transaction.signature,
+      gift: req.body.gift,
+      headers: req.headers,
+    });
 
     res.respond(200);
   },
@@ -61,13 +90,13 @@ api.iapSubscriptionAndroid = {
  * @api {get} /iap/android/subscribe/cancel Google Payments: subscribe cancel
  * @apiName AndroidSubscribeCancel
  * @apiGroup Payments
- **/
+ * */
 api.iapCancelSubscriptionAndroid = {
   method: 'GET',
   url: '/iap/android/subscribe/cancel',
-  middlewares: [authWithUrl],
+  middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
     await googlePayments.cancelSubscribe(user, req.headers);
 
@@ -79,103 +108,95 @@ api.iapCancelSubscriptionAndroid = {
   },
 };
 
-// IMPORTANT: NOT PORTED TO v3 standards (not using res.respond)
-
 /**
  * @apiIgnore Payments are considered part of the private API
  * @api {post} /iap/ios/verify iOS Verify IAP
  * @apiName IapiOSVerify
  * @apiGroup Payments
- **/
+ * */
 api.iapiOSVerify = {
   method: 'POST',
   url: '/iap/ios/verify',
   middlewares: [authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let iapBody = req.body;
+    if (!req.body.transaction) throw new BadRequest(res.t('missingReceipt'));
+    const appleRes = await applePayments.verifyGemPurchase({
+      user: res.locals.user,
+      receipt: req.body.transaction.receipt,
+      gift: req.body.gift,
+      headers: req.headers,
+    });
+    res.respond(200, appleRes);
+  },
+};
 
-    let appleRes;
+/**
+ * @apiIgnore Payments are considered part of the private API
+ * @api {post} /iap/android/subscription iOS Subscribe
+ * @apiName IapiOSSubscribe
+ * @apiGroup Payments
+ * */
+api.iapSubscriptioniOS = {
+  method: 'POST',
+  url: '/iap/ios/subscribe',
+  middlewares: [authWithHeaders()],
+  async handler (req, res) {
+    if (!req.body.sku) throw new BadRequest(res.t('missingSubscriptionCode'));
+    if (!req.body.receipt) throw new BadRequest(res.t('missingReceipt'));
 
-    try {
-      await iap.setup();
+    await applePayments.subscribe(req.body.sku, res.locals.user, req.body.receipt, req.headers);
 
-      appleRes = await iap.validate(iap.APPLE, iapBody.transaction.receipt);
-      let isValidated = iap.isValidated(appleRes);
-      if (!isValidated) throw new Error('INVALID_RECEIPT');
+    res.respond(200);
+  },
+};
 
-      let purchaseDataList = iap.getPurchaseData(appleRes);
-      if (purchaseDataList.length === 0) throw new Error('NO_ITEM_PURCHASED');
+/**
+ * @apiIgnore Payments are considered part of the private API
+ * @api {get} /iap/android/subscribe/cancel Apple Payments: subscribe cancel
+ * @apiName iOSSubscribeCancel
+ * @apiGroup Payments
+ * */
+api.iapCancelSubscriptioniOS = {
+  method: 'GET',
+  url: '/iap/ios/subscribe/cancel',
+  middlewares: [authWithHeaders()],
+  async handler (req, res) {
+    const { user } = res.locals;
 
-      let correctReceipt = true;
+    await applePayments.cancelSubscribe(user, req.headers);
 
-      // Purchasing one item at a time (processing of await(s) below is sequential not parallel)
-      for (let index in purchaseDataList) {
-        let purchaseData = purchaseDataList[index];
-        let token = purchaseData.transactionId;
-
-        let existingReceipt = await IapPurchaseReceipt.findOne({ // eslint-disable-line no-await-in-loop
-          _id: token,
-        }).exec();
-
-        if (!existingReceipt) {
-          await IapPurchaseReceipt.create({ // eslint-disable-line no-await-in-loop
-            _id: token,
-            consumed: true,
-            userId: user._id,
-          });
-        } else {
-          throw new Error('RECEIPT_ALREADY_USED');
-        }
-
-        let amount;
-        switch (purchaseData.productId) {
-          case 'com.habitrpg.ios.Habitica.4gems':
-            amount = 1;
-            break;
-          case 'com.habitrpg.ios.Habitica.20gems':
-          case 'com.habitrpg.ios.Habitica.21gems':
-            amount = 5.25;
-            break;
-          case 'com.habitrpg.ios.Habitica.42gems':
-            amount = 10.5;
-            break;
-          case 'com.habitrpg.ios.Habitica.84gems':
-            amount = 21;
-            break;
-        }
-        if (!amount) {
-          correctReceipt = false;
-          break;
-        }
-
-        await payments.buyGems({ // eslint-disable-line no-await-in-loop
-          user,
-          paymentMethod: 'IAP AppleStore',
-          amount,
-          headers: req.headers,
-        });
-      }
-
-      if (!correctReceipt) throw new Error('INVALID_ITEM_PURCHASED');
-
-      return res.status(200).json({
-        ok: true,
-        data: appleRes,
-      });
-    } catch (err) {
-      logger.error(err, {
-        userId: user._id,
-        iapBody,
-        appleRes,
-      });
-
-      return res.status(500).json({
-        ok: false,
-        data: 'An error occurred while processing the purchase.',
-      });
+    if (req.query.noRedirect) {
+      res.respond(200);
+    } else {
+      res.redirect('/');
     }
   },
 };
 
-module.exports = api;
+/**
+ * @apiIgnore Payments are considered part of the private API
+ * @api {post} /iap/ios/norenew-subscribe iOS Verify IAP
+ * @apiName IapiOSVerify
+ * @apiGroup Payments
+ * */
+api.iapSubscriptioniOSNoRenew = {
+  method: 'POST',
+  url: '/iap/ios/norenew-subscribe',
+  middlewares: [authWithHeaders()],
+  async handler (req, res) {
+    if (!req.body.sku) throw new BadRequest(res.t('missingSubscriptionCode'));
+    if (!req.body.transaction) throw new BadRequest(res.t('missingReceipt'));
+
+    await applePayments.noRenewSubscribe({
+      sku: req.body.sku,
+      user: res.locals.user,
+      receipt: req.body.transaction.receipt,
+      gift: req.body.gift,
+      headers: req.headers,
+    });
+
+    res.respond(200);
+  },
+};
+
+export default api;

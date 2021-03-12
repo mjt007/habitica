@@ -1,7 +1,7 @@
 import nconf from 'nconf';
 import {
   generateUser,
-} from '../../../../helpers/api-v3-integration.helper';
+} from '../../../../helpers/api-integration/v3';
 
 describe('POST /debug/make-admin (pended for v3 prod testing)', () => {
   let user;
@@ -26,10 +26,10 @@ describe('POST /debug/make-admin (pended for v3 prod testing)', () => {
     nconf.set('IS_PROD', true);
 
     await expect(user.post('/debug/make-admin'))
-    .eventually.be.rejected.and.to.deep.equal({
-      code: 404,
-      error: 'NotFound',
-      message: 'Not found.',
-    });
+      .eventually.be.rejected.and.to.deep.equal({
+        code: 404,
+        error: 'NotFound',
+        message: 'Not found.',
+      });
   });
 });

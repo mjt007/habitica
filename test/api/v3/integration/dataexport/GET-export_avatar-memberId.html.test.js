@@ -1,10 +1,10 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
   translate as t,
-} from '../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
+} from '../../../../helpers/api-integration/v3';
 
-describe('GET /export/avatar-:memberId.html', () => {
+xdescribe('GET /export/avatar-:memberId.html', () => {
   let user;
 
   before(async () => {
@@ -20,16 +20,16 @@ describe('GET /export/avatar-:memberId.html', () => {
   });
 
   it('handles non-existing members', async () => {
-    let dummyId = generateUUID();
+    const dummyId = generateUUID();
     await expect(user.get(`/export/avatar-${dummyId}.html`)).to.eventually.be.rejected.and.eql({
       code: 404,
       error: 'NotFound',
-      message: t('userWithIDNotFound', {userId: dummyId}),
+      message: t('userWithIDNotFound', { userId: dummyId }),
     });
   });
 
   it('returns an html page', async () => {
-    let res = await user.get(`/export/avatar-${user._id}.html`);
+    const res = await user.get(`/export/avatar-${user._id}.html`);
     expect(res.substring(0, 100).indexOf('<!DOCTYPE html>')).to.equal(0);
   });
 });

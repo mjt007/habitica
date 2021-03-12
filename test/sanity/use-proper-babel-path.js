@@ -1,20 +1,18 @@
-'use strict';
-
-let glob = require('glob').sync;
-let readFile = require('fs').readFileSync;
+import { sync as glob } from 'glob';
+import { readFileSync as readFile } from 'fs';
 
 const IMPORT_REGEX = /(import|require).*common\/script/;
 
 describe('Use Proper Babel Paths', () => {
   it('uses proper babel files in website/server', () => {
-    let websiteServerPaths = glob('./website/server/**/*.js');
+    const websiteServerPaths = glob('./website/server/**/*.js');
 
     if (websiteServerPaths.length === 0) {
       throw new Error('Could not find any files in website/server/**/*.js');
     }
 
-    websiteServerPaths.forEach((filePath) => {
-      let file = readFile(filePath, {encoding: 'utf8'});
+    websiteServerPaths.forEach(filePath => {
+      const file = readFile(filePath, { encoding: 'utf8' });
 
       try {
         expect(file).to.not.match(IMPORT_REGEX);

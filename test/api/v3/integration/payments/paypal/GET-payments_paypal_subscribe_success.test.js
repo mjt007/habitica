@@ -1,11 +1,11 @@
 import {
   generateUser,
-  translate as t,
 } from '../../../../../helpers/api-integration/v3';
-import paypalPayments from '../../../../../../website/server/libs/paypalPayments';
+import apiError from '../../../../../../website/server/libs/apiError';
+import paypalPayments from '../../../../../../website/server/libs/payments/paypal';
 
 describe('payments : paypal #subscribeSuccess', () => {
-  let endpoint = '/paypal/subscribe/success';
+  const endpoint = '/paypal/subscribe/success';
   let user;
 
   beforeEach(async () => {
@@ -16,7 +16,7 @@ describe('payments : paypal #subscribeSuccess', () => {
     await expect(user.get(endpoint)).to.eventually.be.rejected.and.eql({
       code: 400,
       error: 'BadRequest',
-      message: t('missingPaypalBlock'),
+      message: apiError('missingPaypalBlock'),
     });
   });
 
@@ -24,7 +24,7 @@ describe('payments : paypal #subscribeSuccess', () => {
     let subscribeSuccessStub;
 
     beforeEach(async () => {
-      subscribeSuccessStub = sinon.stub(paypalPayments, 'subscribeSuccess').returnsPromise().resolves({});
+      subscribeSuccessStub = sinon.stub(paypalPayments, 'subscribeSuccess').resolves({});
     });
 
     afterEach(() => {
@@ -32,7 +32,7 @@ describe('payments : paypal #subscribeSuccess', () => {
     });
 
     it('creates a subscription', async () => {
-      let token = 'test-token';
+      const token = 'test-token';
 
       user = await generateUser({
         'profile.name': 'sender',
@@ -42,7 +42,7 @@ describe('payments : paypal #subscribeSuccess', () => {
         balance: 2,
       });
 
-      await user.get(`${endpoint}?token=${token}`);
+      await user.get(`${endpoint}?token=${token}&noRedirect=true`);
 
       expect(subscribeSuccessStub).to.be.calledOnce;
 

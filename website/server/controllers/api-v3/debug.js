@@ -1,12 +1,15 @@
+import _ from 'lodash';
 import { authWithHeaders } from '../../middlewares/auth';
 import ensureDevelpmentMode from '../../middlewares/ensureDevelpmentMode';
 import { BadRequest } from '../../libs/errors';
-import { content } from '../../../common';
-import _ from 'lodash';
+import common from '../../../common';
+
+const { content } = common;
 
 /**
  * @apiDefine Development Development
- * These routes only exist while Habitica is in development mode. (Such as running a local instance on your computer)
+ * These routes only exist while Habitica is in development mode.
+ * (Such as running a local instance on your computer).
  */
 
 /**
@@ -14,7 +17,7 @@ import _ from 'lodash';
  * This route only exists when developing Habitica in non-production environment.
  */
 
-let api = {};
+const api = {};
 
 /**
  * @api {post} /api/v3/debug/add-ten-gems Add ten gems to the current user
@@ -29,7 +32,7 @@ api.addTenGems = {
   url: '/debug/add-ten-gems',
   middlewares: [ensureDevelpmentMode, authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
     user.balance += 2.5;
 
@@ -52,7 +55,7 @@ api.addHourglass = {
   url: '/debug/add-hourglass',
   middlewares: [ensureDevelpmentMode, authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
     user.purchased.plan.consecutive.trinkets += 1;
 
@@ -75,8 +78,8 @@ api.setCron = {
   url: '/debug/set-cron',
   middlewares: [ensureDevelpmentMode, authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let cron = req.body.lastCron;
+    const { user } = res.locals;
+    const cron = req.body.lastCron;
 
     user.lastCron = cron;
 
@@ -99,7 +102,7 @@ api.makeAdmin = {
   url: '/debug/make-admin',
   middlewares: [ensureDevelpmentMode, authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
+    const { user } = res.locals;
 
     user.contributor.admin = true;
 
@@ -115,6 +118,14 @@ api.makeAdmin = {
  * @apiGroup Development
  * @apiPermission Developers
  *
+ * @apiParam (Body) {Object} gear Object to replace user's <code><a href="https://github.com/HabitRPG/habitica/blob/develop/website/server/models/user/schema.js#L243">gear.owned</a></code> object.
+ * @apiParam (Body) {Object} special Object to replace user's <code><a href="https://github.com/HabitRPG/habitica/blob/develop/website/server/models/user/schema.js#272">special</a></code> object.
+ * @apiParam (Body) {Object} pets Object to replace user's <code><a href="https://github.com/HabitRPG/habitica/blob/develop/website/server/models/user/schema.js#296">pets</a></code> object.
+ * @apiParam (Body) {Object} mounts Object to replace user's <code><a href="https://github.com/HabitRPG/habitica/blob/develop/website/server/models/user/schema.js#329">mounts</a></code> object.
+ * @apiParam (Body) {Object} eggs Object to replace user's <code><a href="https://github.com/HabitRPG/habitica/blob/develop/website/server/models/user/schema.js#310">eggs</a></code> object.
+ * @apiParam (Body) {Object} hatchingPotions Object to replace user's <code><a href="https://github.com/HabitRPG/habitica/blob/develop/website/server/models/user/schema.js#316">hatchingPotions</a></code> object.
+ * @apiParam (Body) {Object} food Object to replace user's <code><a href="https://github.com/HabitRPG/habitica/blob/develop/website/server/models/user/schema.js#322">food</a></code> object.
+ * @apiParam (Body) {Object} quests Object to replace user's <code><a href="https://github.com/HabitRPG/habitica/blob/develop/website/server/models/user/schema.js#344">quests</a></code> object.
  * @apiSuccess {Object} data An empty Object
  */
 api.modifyInventory = {
@@ -122,11 +133,12 @@ api.modifyInventory = {
   url: '/debug/modify-inventory',
   middlewares: [ensureDevelpmentMode, authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let { gear } = req.body;
+    const { user } = res.locals;
+    const { gear } = req.body;
 
     if (gear) {
       user.items.gear.owned = gear;
+      user.markModified('items.gear.owned');
     }
 
     [
@@ -137,9 +149,10 @@ api.modifyInventory = {
       'hatchingPotions',
       'food',
       'quests',
-    ].forEach((type) => {
+    ].forEach(type => {
       if (req.body[type]) {
         user.items[type] = req.body[type];
+        user.markModified(`items.${type}`);
       }
     });
 
@@ -162,9 +175,9 @@ api.questProgress = {
   url: '/debug/quest-progress',
   middlewares: [ensureDevelpmentMode, authWithHeaders()],
   async handler (req, res) {
-    let user = res.locals.user;
-    let key = _.get(user, 'party.quest.key');
-    let quest = content.quests[key];
+    const { user } = res.locals;
+    const key = _.get(user, 'party.quest.key');
+    const quest = content.quests[key];
 
     if (!quest) {
       throw new BadRequest('User is not on a valid quest.');
@@ -188,4 +201,4 @@ api.questProgress = {
   },
 };
 
-module.exports = api;
+export default api;

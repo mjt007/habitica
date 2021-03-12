@@ -10,16 +10,20 @@ import {
 
 describe('shared.ops.releaseMounts', () => {
   let user;
-  let animal = 'Wolf-Base';
+  const animal = 'Wolf-Base';
 
   beforeEach(() => {
     user = generateUser();
+    Object.keys(content.pets).forEach(k => {
+      user.items.mounts[k] = content.pets[k];
+      user.items.mounts[k] = true;
+    });
+
     user.items.currentMount = animal;
-    user.items.mounts[animal] = true;
     user.balance = 1;
   });
 
-  it('returns an error when user balance is too low', (done) => {
+  it('returns an error when user balance is too low', done => {
     user.balance = 0;
 
     try {
@@ -31,15 +35,28 @@ describe('shared.ops.releaseMounts', () => {
     }
   });
 
+  it('returns an error when user does not have all pets', done => {
+    const mountsKeys = Object.keys(user.items.mounts);
+    delete user.items.mounts[mountsKeys[0]];
+
+    try {
+      releaseMounts(user);
+    } catch (err) {
+      expect(err).to.be.an.instanceof(NotAuthorized);
+      expect(err.message).to.equal(i18n.t('notEnoughMounts'));
+      done();
+    }
+  });
+
   it('releases mounts', () => {
-    let [, message] = releaseMounts(user);
+    const message = releaseMounts(user)[1];
 
     expect(message).to.equal(i18n.t('mountsReleased'));
     expect(user.items.mounts[animal]).to.equal(null);
   });
 
   it('removes drop currentMount', () => {
-    let mountInfo = content.mountInfo[user.items.currentMount];
+    const mountInfo = content.mountInfo[user.items.currentMount];
     expect(mountInfo.type).to.equal('drop');
     releaseMounts(user);
 
@@ -47,11 +64,11 @@ describe('shared.ops.releaseMounts', () => {
   });
 
   it('leaves non-drop mount equipped', () => {
-    let questAnimal = 'Gryphon-Base';
+    const questAnimal = 'Gryphon-Base';
     user.items.currentMount = questAnimal;
     user.items.mounts[questAnimal] = true;
 
-    let mountInfo = content.mountInfo[user.items.currentMount];
+    const mountInfo = content.mountInfo[user.items.currentMount];
     expect(mountInfo.type).to.not.equal('drop');
     releaseMounts(user);
 
@@ -60,8 +77,29 @@ describe('shared.ops.releaseMounts', () => {
 
   it('increases mountMasterCount achievement', () => {
     releaseMounts(user);
-
     expect(user.achievements.mountMasterCount).to.equal(1);
+  });
+
+  it('does not increase mountMasterCount achievement if mount is missing (null)', () => {
+    const mountMasterCountBeforeRelease = user.achievements.mountMasterCount;
+    user.items.mounts[animal] = null;
+
+    try {
+      releaseMounts(user);
+    } catch (e) {
+      expect(user.achievements.mountMasterCount).to.equal(mountMasterCountBeforeRelease);
+    }
+  });
+
+  it('does not increase mountMasterCount achievement if mount is missing (undefined)', () => {
+    const mountMasterCountBeforeRelease = user.achievements.mountMasterCount;
+    delete user.items.mounts[animal];
+
+    try {
+      releaseMounts(user);
+    } catch (e) {
+      expect(user.achievements.mountMasterCount).to.equal(mountMasterCountBeforeRelease);
+    }
   });
 
   it('subtracts gems from balance', () => {

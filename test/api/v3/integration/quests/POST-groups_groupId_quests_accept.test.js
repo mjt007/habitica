@@ -2,8 +2,9 @@ import {
   createAndPopulateGroup,
   translate as t,
   generateUser,
-} from '../../../../helpers/api-v3-integration.helper';
-import Bluebird from 'bluebird';
+  sleep,
+} from '../../../../helpers/api-integration/v3';
+import { chatModel as Chat } from '../../../../../website/server/models/message';
 
 describe('POST /groups/:groupId/quests/accept', () => {
   const PET_QUEST = 'whale';
@@ -16,7 +17,7 @@ describe('POST /groups/:groupId/quests/accept', () => {
   beforeEach(async () => {
     user = await generateUser();
 
-    let { group, groupLeader, members } = await createAndPopulateGroup({
+    const { group, groupLeader, members } = await createAndPopulateGroup({
       groupDetails: { type: 'party', privacy: 'private' },
       members: 2,
     });
@@ -33,33 +34,33 @@ describe('POST /groups/:groupId/quests/accept', () => {
   context('failure conditions', () => {
     it('does not accept quest without an invite', async () => {
       await expect(leader.post(`/groups/${questingGroup._id}/quests/accept`))
-      .to.eventually.be.rejected.and.eql({
-        code: 404,
-        error: 'NotFound',
-        message: t('questInviteNotFound'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 404,
+          error: 'NotFound',
+          message: t('questInviteNotFound'),
+        });
     });
 
     it('does not accept quest for a group in which user is not a member', async () => {
       await expect(user.post(`/groups/${questingGroup._id}/quests/accept`))
-      .to.eventually.be.rejected.and.eql({
-        code: 404,
-        error: 'NotFound',
-        message: t('groupNotFound'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 404,
+          error: 'NotFound',
+          message: t('groupNotFound'),
+        });
     });
 
     it('does not accept quest for a guild', async () => {
-      let { group: guild, groupLeader: guildLeader } = await createAndPopulateGroup({
+      const { group: guild, groupLeader: guildLeader } = await createAndPopulateGroup({
         groupDetails: { type: 'guild', privacy: 'private' },
       });
 
       await expect(guildLeader.post(`/groups/${guild._id}/quests/accept`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('guildQuestsNotSupported'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 401,
+          error: 'NotAuthorized',
+          message: t('guildQuestsNotSupported'),
+        });
     });
 
     it('does not accept invite twice', async () => {
@@ -67,11 +68,11 @@ describe('POST /groups/:groupId/quests/accept', () => {
       await partyMembers[0].post(`/groups/${questingGroup._id}/quests/accept`);
 
       await expect(partyMembers[0].post(`/groups/${questingGroup._id}/quests/accept`))
-      .to.eventually.be.rejected.and.eql({
-        code: 400,
-        error: 'BadRequest',
-        message: t('questAlreadyAccepted'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 400,
+          error: 'BadRequest',
+          message: t('questAlreadyAccepted'),
+        });
     });
 
     it('clears the invalid invite from the user when the request fails', async () => {
@@ -79,11 +80,11 @@ describe('POST /groups/:groupId/quests/accept', () => {
       await partyMembers[0].post(`/groups/${questingGroup._id}/quests/accept`);
 
       await expect(partyMembers[0].post(`/groups/${questingGroup._id}/quests/accept`))
-      .to.eventually.be.rejected.and.eql({
-        code: 400,
-        error: 'BadRequest',
-        message: t('questAlreadyAccepted'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 400,
+          error: 'BadRequest',
+          message: t('questAlreadyAccepted'),
+        });
 
       await partyMembers[0].sync();
       expect(partyMembers[0].party.quest.RSVPNeeded).to.be.false;
@@ -96,11 +97,11 @@ describe('POST /groups/:groupId/quests/accept', () => {
       await partyMembers[1].post(`/groups/${questingGroup._id}/quests/accept`);
 
       await expect(partyMembers[0].post(`/groups/${questingGroup._id}/quests/accept`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('questAlreadyUnderway'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 401,
+          error: 'NotAuthorized',
+          message: t('questAlreadyStartedFriendly'),
+        });
     });
   });
 
@@ -111,7 +112,7 @@ describe('POST /groups/:groupId/quests/accept', () => {
 
       await Promise.all([partyMembers[0].sync(), questingGroup.sync()]);
       expect(leader.party.quest.RSVPNeeded).to.equal(false);
-      expect(questingGroup.quest.members[partyMembers[0]._id]);
+      expect(questingGroup.quest.members[partyMembers[0]._id]).to.equal(true);
     });
 
     it('does not begin the quest if pending invitations remain', async () => {
@@ -133,14 +134,14 @@ describe('POST /groups/:groupId/quests/accept', () => {
     });
 
     it('cleans up user quest data for non-quest members when last member accepts', async () => {
-      let rejectingMember = partyMembers[0];
+      const rejectingMember = partyMembers[0];
 
       await leader.post(`/groups/${questingGroup._id}/quests/invite/${PET_QUEST}`);
       await rejectingMember.post(`/groups/${questingGroup._id}/quests/reject`);
       // quest will start after everyone has accepted
       await partyMembers[1].post(`/groups/${questingGroup._id}/quests/accept`);
 
-      await Bluebird.delay(500);
+      await sleep(0.5);
 
       await rejectingMember.sync();
 
@@ -155,12 +156,13 @@ describe('POST /groups/:groupId/quests/accept', () => {
       // quest will start after everyone has accepted
       await partyMembers[1].post(`/groups/${questingGroup._id}/quests/accept`);
 
-      await questingGroup.sync();
-      expect(questingGroup.chat[0].text).to.exist;
-      expect(questingGroup.chat[0]._meta).to.exist;
-      expect(questingGroup.chat[0]._meta).to.have.all.keys(['participatingMembers']);
+      const groupChat = await Chat.find({ groupId: questingGroup._id }).exec();
 
-      let returnedGroup = await leader.get(`/groups/${questingGroup._id}`);
+      expect(groupChat[0].text).to.exist;
+      expect(groupChat[0]._meta).to.exist;
+      expect(groupChat[0]._meta).to.have.all.keys(['participatingMembers']);
+
+      const returnedGroup = await leader.get(`/groups/${questingGroup._id}`);
       expect(returnedGroup.chat[0]._meta).to.be.undefined;
     });
   });

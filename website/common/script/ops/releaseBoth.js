@@ -1,74 +1,97 @@
+import pick from 'lodash/pick';
 import content from '../content/index';
+import { beastMasterProgress, mountMasterProgress } from '../count';
 import i18n from '../i18n';
 import {
   NotAuthorized,
 } from '../libs/errors';
 import splitWhitespace from '../libs/splitWhitespace';
-import _ from 'lodash';
 
-module.exports = function releaseBoth (user, req = {}, analytics) {
-  let animal;
+export default function releaseBoth (user, req = {}) {
+  if (!user.achievements.triadBingo) {
+    throw new NotAuthorized(i18n.t('notEnoughPetsMounts', req.language));
+  }
 
-  if (user.balance < 1.5 && !user.achievements.triadBingo) {
-    throw new NotAuthorized(i18n.t('notEnoughGems', req.language));
+  if (
+    beastMasterProgress(user.items.pets) !== 90
+    || mountMasterProgress(user.items.mounts) !== 90
+  ) {
+    throw new NotAuthorized(i18n.t('notEnoughPetsMounts', req.language));
   }
 
   let giveTriadBingo = true;
+  let giveBeastMasterAchievement = true;
+  let giveMountMasterAchievement = true;
 
-  if (!user.achievements.triadBingo) {
-    if (analytics) {
-      analytics.track('release pets & mounts', {
-        uuid: user._id,
-        acquireMethod: 'Gems',
-        gemCost: 6,
-        category: 'behavior',
-        headers: req.headers,
-      });
-    }
+  // @TODO: We are only offering the free version now
+  // if (!user.achievements.triadBingo) {
+  //   if (analytics) {
+  //     analytics.track('release pets & mounts', {
+  //       uuid: user._id,
+  //       acquireMethod: 'Gems',
+  //       gemCost: 6,
+  //       category: 'behavior',
+  //       headers: req.headers,
+  //     });
+  //   }
+  //
+  //   user.balance -= 1.5;
+  // }
 
-    user.balance -= 1.5;
-  }
-
-  let mountInfo = content.mountInfo[user.items.currentMount];
+  const mountInfo = content.mountInfo[user.items.currentMount];
 
   if (mountInfo && mountInfo.type === 'drop') {
     user.items.currentMount = '';
   }
 
-  let petInfo = content.petInfo[user.items.currentPet];
+  const petInfo = content.petInfo[user.items.currentPet];
 
   if (petInfo && petInfo.type === 'drop') {
     user.items.currentPet = '';
   }
 
-  for (animal in content.pets) {
+  for (const animal of Object.keys(content.pets)) {
     if (user.items.pets[animal] === -1) {
       giveTriadBingo = false;
+    } else if (!user.items.pets[animal]) {
+      giveBeastMasterAchievement = false;
+    }
+    if (user.items.mounts[animal] === null || user.items.mounts[animal] === undefined) {
+      giveMountMasterAchievement = false;
     }
 
     user.items.pets[animal] = 0;
     user.items.mounts[animal] = null;
   }
 
-  if (!user.achievements.beastMasterCount) {
-    user.achievements.beastMasterCount = 0;
+  if (user.markModified) {
+    user.markModified('items.pets');
+    user.markModified('items.mounts');
   }
-  user.achievements.beastMasterCount++;
 
-  if (!user.achievements.mountMasterCount) {
-    user.achievements.mountMasterCount = 0;
+  if (giveBeastMasterAchievement) {
+    if (!user.achievements.beastMasterCount) {
+      user.achievements.beastMasterCount = 0;
+    }
+    user.achievements.beastMasterCount += 1;
   }
-  user.achievements.mountMasterCount++;
+
+  if (giveMountMasterAchievement) {
+    if (!user.achievements.mountMasterCount) {
+      user.achievements.mountMasterCount = 0;
+    }
+    user.achievements.mountMasterCount += 1;
+  }
 
   if (giveTriadBingo) {
     if (!user.achievements.triadBingoCount) {
       user.achievements.triadBingoCount = 0;
     }
-    user.achievements.triadBingoCount++;
+    user.achievements.triadBingoCount += 1;
   }
 
   return [
-    _.pick(user, splitWhitespace('achievements items balance')),
+    pick(user, splitWhitespace('achievements items balance')),
     i18n.t('mountsAndPetsReleased'),
   ];
-};
+}

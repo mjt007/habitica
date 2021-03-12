@@ -1,9 +1,13 @@
+import escapeRegExp from 'lodash/escapeRegExp';
 import { authWithHeaders } from '../../middlewares/auth';
 import {
   model as User,
   publicFields as memberFields,
   nameFields,
 } from '../../models/user';
+import {
+  KNOWN_INTERACTIONS,
+} from '../../models/user/methods';
 import { model as Group } from '../../models/group';
 import { model as Challenge } from '../../models/challenge';
 import {
@@ -15,20 +19,84 @@ import {
   getUserInfo,
   sendTxn as sendTxnEmail,
 } from '../../libs/email';
-import Bluebird from 'bluebird';
 import { sendNotification as sendPushNotification } from '../../libs/pushNotifications';
-import { achievements } from '../../../../website/common/';
+import common from '../../../common';
+import { sentMessage } from '../../libs/inbox';
+import {
+  sanitizeText as sanitizeMessageText,
+} from '../../models/message';
+import highlightMentions from '../../libs/highlightMentions';
+import { handleGetMembersForChallenge } from '../../libs/challenges/handleGetMembersForChallenge';
 
-let api = {};
+const { achievements } = common;
+
+const api = {};
 
 /**
  * @api {get} /api/v3/members/:memberId Get a member profile
  * @apiName GetMember
  * @apiGroup Member
  *
- * @apiParam {UUID} memberId The member's id
+ * @apiParam (Path) {UUID} memberId The member's id
  *
  * @apiSuccess {Object} data The member object
+ *
+ * @apiSuccess {Object} data.inbox Basic information about person's inbox
+ * @apiSuccess {Object} data.stats Includes current stats and buffs
+ * @apiSuccess {Object} data.profile Includes name
+ * @apiSuccess {Object} data.preferences Includes info about appearance and public prefs
+ * @apiSuccess {Object} data.party Includes basic info about current party and quests
+ * @apiSuccess {Object} data.items Basic inventory information includes quests,
+ *                                 food, potions, eggs, gear, special items
+ * @apiSuccess {Object} data.achievements Lists current achievements
+ * @apiSuccess {Object} data.auth Includes latest timestamps
+ *
+ * @apiSuccessExample {json} Success-Response:
+ * {
+ *  "success": true,
+ *  "data": {
+ *    "_id": "99999999-9999-9999-9999-8f14c101aeff",
+ *    "inbox": {
+ *      "optOut": false
+ *    },
+ *    "stats": {
+ *    ---INCLUDES STATS AND BUFFS---
+ *    },
+ *    "profile": {
+ *      "name": "Ezra"
+ *    },
+ *    "preferences": {
+ *      ---INCLUDES INFO ABOUT APPEARANCE AND PUBLIC PREFS---
+ *    },
+ *    "party": {
+ *      "_id": "12345678-0987-abcd-82a6-837c81db4c1e",
+ *      "quest": {
+ *        "RSVPNeeded": false,
+ *        "progress": {}
+ *      },
+ *    },
+ *    "items": {
+ *      "lastDrop": {
+ *        "count": 0,
+ *        "date": "2017-01-15T02:41:35.009Z"
+ *      },
+ *        ----INCLUDES QUESTS, FOOD, POTIONS, EGGS, GEAR, CARDS, SPECIAL ITEMS (E.G. SNOWBALLS)----
+ *      }
+ *    },
+ *    "achievements": {
+ *      "partyUp": true,
+ *      "habitBirthdays": 2,
+ *    },
+ *    "auth": {
+ *      "timestamps": {
+ *        "loggedin": "2017-03-05T12:30:54.545Z",
+ *        "created": "2017-01-12T03:30:11.842Z"
+ *      }
+ *    },
+ *    "id": "99999999-9999-9999-9999-8f14c101aeff"
+ *  }
+ * }
+ *)
  *
  * @apiUse UserNotFound
  */
@@ -39,21 +107,51 @@ api.getMember = {
   async handler (req, res) {
     req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let memberId = req.params.memberId;
+    const { memberId } = req.params;
 
-    let member = await User
+    const member = await User
       .findById(memberId)
       .select(memberFields)
       .exec();
 
-    if (!member) throw new NotFound(res.t('userWithIDNotFound', {userId: memberId}));
+    if (!member) throw new NotFound(res.t('userWithIDNotFound', { userId: memberId }));
+
+    if (!member.flags.verifiedUsername) member.auth.local.username = null;
 
     // manually call toJSON with minimize: true so empty paths aren't returned
-    let memberToJSON = member.toJSON({minimize: true});
-    member.addComputedStatsToJSONObj(memberToJSON.stats);
+    const memberToJSON = member.toJSON({ minimize: true });
+    User.addComputedStatsToJSONObj(memberToJSON.stats, member);
+
+    res.respond(200, memberToJSON);
+  },
+};
+
+api.getMemberByUsername = {
+  method: 'GET',
+  url: '/members/username/:username',
+  middlewares: [],
+  async handler (req, res) {
+    req.checkParams('username', res.t('invalidReqParams')).notEmpty();
+
+    const validationErrors = req.validationErrors();
+    if (validationErrors) throw validationErrors;
+
+    let username = req.params.username.toLowerCase();
+    if (username[0] === '@') username = username.slice(1, username.length);
+
+    const member = await User
+      .findOne({ 'auth.local.lowerCaseUsername': username, 'flags.verifiedUsername': true })
+      .select(memberFields)
+      .exec();
+
+    if (!member) throw new NotFound(res.t('userNotFound'));
+
+    // manually call toJSON with minimize: true so empty paths aren't returned
+    const memberToJSON = member.toJSON({ minimize: true });
+    User.addComputedStatsToJSONObj(memberToJSON.stats, member);
 
     res.respond(200, memberToJSON);
   },
@@ -63,7 +161,8 @@ api.getMember = {
  * @api {get} /api/v3/members/:memberId/achievements Get member achievements object
  * @apiName GetMemberAchievements
  * @apiGroup Member
- * @apiDescription Get a list of achievements of the requested member, grouped by basic / seasonal / special.
+ * @apiDescription Get a list of achievements
+ * of the requested member, grouped by basic / seasonal / special.
  *
  * @apiParam (Path) {UUID} memberId The member's id
  *
@@ -73,15 +172,18 @@ api.getMember = {
  * @apiSuccess {Object} data.seasonal The seasonal achievements object
  * @apiSuccess {Object} data.special The special achievements object
  *
- * @apiSuccess {String} data.*.label The label for that category
- * @apiSuccess {Object} data.*.achievements The achievements in that category
+ * @apiSuccess {String} data.label The label for that category
+ * @apiSuccess {Object} data.achievements The achievements in that category
  *
- * @apiSuccess {String} data.*.achievements.title The localized title string
- * @apiSuccess {String} data.*.achievements.text The localized description string
- * @apiSuccess {Boolean} data.*.achievements.earned Whether the user has earned the achievement
- * @apiSuccess {Number} data.*.achievements.index The unique index assigned to the achievement (only for sorting purposes)
- * @apiSuccess {Anything} data.*.achievements.value The value related to the achievement (if applicable)
- * @apiSuccess {Number} data.*.achievements.optionalCount The count related to the achievement (if applicable)
+ * @apiSuccess {String} data.achievements.title The localized title string
+ * @apiSuccess {String} data.achievements.text The localized description string
+ * @apiSuccess {Boolean} data.achievements.earned Whether the user has earned the achievement
+ * @apiSuccess {Number} data.achievements.index The unique index assigned
+ *                                                to the achievement (only for sorting purposes).
+ * @apiSuccess {Anything} data.achievements.value The value related to the achievement
+ *                                                  (if applicable)
+ * @apiSuccess {Number} data.achievements.optionalCount The count related to the achievement
+ *                                                        (if applicable)
  *
  * @apiSuccessExample {json} Successful Response
  * {
@@ -99,7 +201,9 @@ api.getMember = {
  *       },
  *       perfect: {
  *         title: "5 Perfect Days",
- *         text: "Completed all active Dailies on 5 days. With this achievement you get a +level/2 buff to all attributes for the next day. Levels greater than 100 don't have any additional effects on buffs.",
+ *         text: "Completed all active Dailies on 5 days. With this achievement
+ *                you get a +level/2 buff to all attributes for the next day.
+ *                Levels greater than 100 don't have any additional effects on buffs.",
  *         icon: "achievement-perfect",
  *         earned: true,
  *         value: 5,
@@ -127,7 +231,8 @@ api.getMember = {
  *     achievements: {
  *       habitSurveys: {
  *         title: "Helped Habitica Grow",
- *         text: "Helped Habitica grow on 0 occasions, either by filling out a survey or helping with a major testing effort. Thank you!",
+ *         text: "Helped Habitica grow on 0 occasions, either by filling out
+ *               a survey or helping with a major testing effort. Thank you!",
  *         icon: "achievement-tree",
  *         earned: false,
  *         value: 0,
@@ -138,8 +243,10 @@ api.getMember = {
  *   }
  * }
  *
- * @apiError (400) {BadRequest} MemberIdRequired The `id` param is required and must be a valid `UUID`
- * @apiError (404) {NotFound} UserWithIdNotFound The `id` param did not belong to an existing member
+ * @apiError (400) {BadRequest} MemberIdRequired The `id` param is required
+ *                                               and must be a valid `UUID`.
+ * @apiError (404) {NotFound} UserWithIdNotFound The `id` param did not
+ *                                               belong to an existing member.
  */
 api.getMemberAchievements = {
   method: 'GET',
@@ -148,77 +255,63 @@ api.getMemberAchievements = {
   async handler (req, res) {
     req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let memberId = req.params.memberId;
+    const { memberId } = req.params;
 
-    let member = await User
+    const member = await User
       .findById(memberId)
       .select(memberFields)
       .exec();
 
-    if (!member) throw new NotFound(res.t('userWithIDNotFound', {userId: memberId}));
+    if (!member) throw new NotFound(res.t('userWithIDNotFound', { userId: memberId }));
 
-    let achievsObject = achievements.getAchievementsForProfile(member, req.language);
+    const achievsObject = achievements.getAchievementsForProfile(member, req.language);
 
     res.respond(200, achievsObject);
   },
 };
 
 // Return a request handler for getMembersForGroup / getInvitesForGroup / getMembersForChallenge
-// type is `invites` or `members`
+
+// @TODO: This violates the Liskov substitution principle.
+// We should create factory functions. See Webhooks for a good example
 function _getMembersForItem (type) {
-  if (['group-members', 'group-invites', 'challenge-members'].indexOf(type) === -1) {
-    throw new Error('Type must be one of "group-members", "group-invites", "challenge-members"');
+  // check for allowed `type`
+  if (['group-members', 'group-invites'].indexOf(type) === -1) {
+    throw new Error('Type must be one of "group-members", "group-invites"');
   }
 
   return async function handleGetMembersForItem (req, res) {
-    if (type === 'challenge-members') {
-      req.checkParams('challengeId', res.t('challengeIdRequired')).notEmpty().isUUID();
-    } else {
-      req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
-    }
+    req.checkParams('groupId', res.t('groupIdRequired')).notEmpty();
     req.checkQuery('lastId').optional().notEmpty().isUUID();
+    // Allow an arbitrary number of results (up to 60)
+    req.checkQuery('limit', res.t('groupIdRequired')).optional().notEmpty().isInt({ min: 1, max: 60 });
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let groupId = req.params.groupId;
-    let challengeId = req.params.challengeId;
-    let lastId = req.query.lastId;
-    let user = res.locals.user;
-    let challenge;
-    let group;
+    const { groupId } = req.params;
+    const { lastId } = req.query;
+    const { user } = res.locals;
 
-    if (type === 'challenge-members') {
-      challenge = await Challenge.findById(challengeId).select('_id type leader group').exec();
-      if (!challenge) throw new NotFound(res.t('challengeNotFound'));
+    const group = await Group.getGroup({ user, groupId, fields: '_id type' });
+    if (!group) throw new NotFound(res.t('groupNotFound'));
 
-      // optionalMembership is set to true because even if you're not member of the group you may be able to access the challenge
-      // for example if you've been booted from it, are the leader or a site admin
-      group = await Group.getGroup({
-        user,
-        groupId: challenge.group,
-        fields: '_id type privacy',
-        optionalMembership: true,
-      });
-
-      if (!group || !challenge.canView(user, group)) throw new NotFound(res.t('challengeNotFound'));
-    } else {
-      group = await Group.getGroup({user, groupId, fields: '_id type'});
-      if (!group) throw new NotFound(res.t('groupNotFound'));
-    }
-
-    let query = {};
+    const query = {};
     let fields = nameFields;
-    let addComputedStats = false; // add computes stats to the member info when items and stats are available
+    // add computes stats to the member info when items and stats are available
+    let addComputedStats = false;
 
-    if (type === 'challenge-members') {
-      query.challenges = challenge._id;
-    } else if (type === 'group-members') {
+    if (type === 'group-members') {
       if (group.type === 'guild') {
         query.guilds = group._id;
+
+        if (req.query.includeAllPublicFields === 'true') {
+          fields = memberFields;
+          addComputedStats = true;
+        }
       } else {
         query['party._id'] = group._id; // group._id and not groupId because groupId could be === 'party'
 
@@ -227,52 +320,90 @@ function _getMembersForItem (type) {
           addComputedStats = true;
         }
       }
+
+      if (req.query.search) {
+        // Creates a RegExp expression when querying for profile.name and auth.local.username
+        const escapedSearch = escapeRegExp(req.query.search);
+        query.$or = [
+          { 'profile.name': { $regex: new RegExp(escapedSearch, 'i') } },
+          { 'auth.local.username': { $regex: new RegExp(req.query.search, 'i') } },
+        ];
+      }
     } else if (type === 'group-invites') {
       if (group.type === 'guild') { // eslint-disable-line no-lonely-if
         query['invitations.guilds.id'] = group._id;
+
+        if (req.query.includeAllPublicFields === 'true') {
+          fields = memberFields;
+          addComputedStats = true;
+        }
       } else {
         query['invitations.party.id'] = group._id; // group._id and not groupId because groupId could be === 'party'
+        // @TODO invitations are now stored like this: `'invitations.parties': []`
+        //  Probably need a database index for it.
+        if (req.query.includeAllPublicFields === 'true') {
+          fields = memberFields;
+          addComputedStats = true;
+        }
       }
     }
 
-    if (lastId) query._id = {$gt: lastId};
+    if (lastId) query._id = { $gt: lastId };
 
-    let limit = 30;
+    const limit = req.query.limit ? Number(req.query.limit) : 30;
 
-    // Allow for all challenges members to be returned
-    if (type === 'challenge-members' && req.query.includeAllMembers === 'true') {
-      limit = 0; // no limit
-    }
-
-    let members = await User
+    const members = await User
       .find(query)
-      .sort({_id: 1})
+      .sort({ _id: 1 })
       .limit(limit)
       .select(fields)
+      .lean()
       .exec();
 
     // manually call toJSON with minimize: true so empty paths aren't returned
-    let membersToJSON = members.map(member => {
-      let memberToJSON = member.toJSON({minimize: true});
-      if (addComputedStats) member.addComputedStatsToJSONObj(memberToJSON.stats);
-
-      return memberToJSON;
-    });
-    res.respond(200, membersToJSON);
+    members.forEach(member => User.transformJSONUser(member, addComputedStats));
+    res.respond(200, members);
   };
 }
 
 /**
  * @api {get} /api/v3/groups/:groupId/members Get members for a group
- * @apiDescription With a limit of 30 member per request. To get all members run requests against this routes (updating the lastId query parameter) until you get less than 30 results.
+ * @apiDescription With a limit of 30 member per request (by default).
+ * To get all members run requests against this routes (updating the lastId query parameter)
+ * until you get less than 30 results (or the specified limit).
  * @apiName GetMembersForGroup
  * @apiGroup Member
  *
- * @apiParam {UUID} groupId The group id
- * @apiParam {UUID} lastId Query parameter to specify the last member returned in a previous request to this route and get the next batch of results
- * @apiParam {boolean} includeAllPublicFields Query parameter available only when fetching a party. If === `true` then all public fields for members will be returned (like when making a request for a single member)
+ * @apiParam (Path) {UUID} groupId The group id ('party' for the user party is accepted)
+ * @apiParam (Query) {UUID} lastId Query parameter to specify the last member
+ *                                 returned in a previous request to this route and
+ *                                 get the next batch of results.
+ * @apiParam (Query) {Number} limit=30 BETA Query parameter
+ *                                     to specify the number of results to return. Max is 60.
+ * @apiParam (Query) {Boolean} includeAllPublicFields If set to `true`
+ *                                                    then all public fields for members
+ *                                                    will be returned (similar to when making
+ *                                                    a request for a single member).
+ * @apiParam (Query) {Boolean} includeTasks If set to `true`, then
+ *                                response should include all tasks per user
+ *                                related to the challenge
  *
- * @apiSuccess {array} data An array of members, sorted by _id
+ * @apiSuccess {Array} data An array of members, sorted by _id
+ *
+ * @apiSuccessExample {json} Success-Response:
+ * {
+ *   "success": true,
+ *   "data": [
+ *     {
+ *       "_id": "00000001-1111-9999-9000-111111111111",
+ *       "profile": {
+ *         "name": "Jiminy"
+ *       },
+ *       "id": "00000001-1111-9999-9000-111111111111"
+ *     },
+ *  }
+ *
+ *
  * @apiUse ChallengeNotFound
  * @apiUse GroupNotFound
  */
@@ -285,14 +416,39 @@ api.getMembersForGroup = {
 
 /**
  * @api {get} /api/v3/groups/:groupId/invites Get invites for a group
- * @apiDescription With a limit of 30 member per request. To get all invites run requests against this routes (updating the lastId query parameter) until you get less than 30 results.
+ * @apiDescription With a limit of 30 member per request (by default). To get all invites run
+ * requests against this routes (updating the lastId query parameter)
+ * until you get less than 30 results.
  * @apiName GetInvitesForGroup
  * @apiGroup Member
  *
- * @apiParam {UUID} groupId The group id
- * @apiParam {UUID} lastId Query parameter to specify the last invite returned in a previous request to this route and get the next batch of results
+ * @apiParam (Path) {UUID} groupId The group id ('party' for the user party is accepted)
+ * @apiParam (Query) {UUID} lastId Query parameter to specify the last invite
+ *                                 returned in a previous request to this route and
+ *                                 get the next batch of results.
+ * @apiParam (Query) {Number} limit=30 BETA Query parameter
+ *                                     to specify the number of results to return. Max is 60.
+ * @apiParam (Query) {Boolean} includeAllPublicFields If set to `true`
+ *                                                    then all public fields for members
+ *                                                    will be returned (similar to when making
+ *                                                    a request for a single member).
  *
  * @apiSuccess {array} data An array of invites, sorted by _id
+ *
+ * @apiSuccessExample {json} Success-Response:
+ * {
+ *   "success": true,
+ *   "data": [
+ *     {
+ *       "_id": "99f3cb9d-4af8-4ca4-9b82-6b2a6bf59b7a",
+ *       "profile": {
+ *         "name": "DoomSmoocher"
+ *       },
+ *       "id": "99f3cb9d-4af8-4ca4-9b82-6b2a6bf59b7a"
+ *     }
+ *   ]
+ * }
+ *
  *
  * @apiUse ChallengeNotFound
  * @apiUse GroupNotFound
@@ -306,19 +462,30 @@ api.getInvitesForGroup = {
 
 /**
  * @api {get} /api/v3/challenges/:challengeId/members Get members for a challenge
- * @apiDescription With a limit of 30 member per request.
- * To get all members run requests against this routes (updating the lastId query parameter) until you get less than 30 results.
- * BETA You can also use ?includeAllMembers=true. This option is currently in BETA and may be removed in future.
- * Its use is discouraged and its performaces are not optimized especially for large challenges.
+ * @apiDescription With a limit of 30 member per request (by default).
+ * To get all members run requests against this routes (updating the lastId query parameter)
+ * until you get less than 30 results.
+ * BETA You can also use ?includeAllMembers=true. This option is currently in BETA
+ * and may be removed in future.
+ * Its use is discouraged and its performances are not optimized especially for large challenges.
  *
  * @apiName GetMembersForChallenge
  * @apiGroup Member
  *
- * @apiParam {UUID} challengeId The challenge id
- * @apiParam {UUID} lastId Query parameter to specify the last member returned in a previous request to this route and get the next batch of results
- * @apiParam {String} includeAllMembers BETA Query parameter - If 'true' all challenge members are returned
+ * @apiParam (Path) {UUID} challengeId The challenge id
+ * @apiParam (Query) {UUID} lastId Query parameter to specify the last member returned
+ *                                 in a previous request to this route and
+ *                                 get the next batch of results.
+ * @apiParam (Query) {Number} limit=30 BETA Query parameter to
+ *                                     specify the number of results to return. Max is 60.
+ * @apiParam (Query) {Boolean} includeTasks BETA Query parameter - If 'true'
+ *                                                    then include challenge tasks of each member
+ * @apiParam (Query) {Boolean} includeAllPublicFields If set to `true`
+ *                                                    then all public fields for members
+ *                                                    will be returned (similar to when making
+ *                                                    a request for a single member).
 
- * @apiSuccess {array} data An array of members, sorted by _id
+ * @apiSuccess {Array} data An array of members, sorted by _id
  *
  * @apiUse ChallengeNotFound
  * @apiUse GroupNotFound
@@ -327,7 +494,7 @@ api.getMembersForChallenge = {
   method: 'GET',
   url: '/challenges/:challengeId/members',
   middlewares: [authWithHeaders()],
-  handler: _getMembersForItem('challenge-members'),
+  handler: handleGetMembersForChallenge,
 };
 
 /**
@@ -335,10 +502,53 @@ api.getMembersForChallenge = {
  * @apiName GetChallengeMemberProgress
  * @apiGroup Member
  *
- * @apiParam {UUID} challengeId The challenge _id
- * @apiParam {UUID} member The member _id
+ * @apiParam (Path) {UUID} challengeId The challenge _id
+ * @apiParam (Path) {UUID} memberId The member _id
  *
- * @apiSuccess {Object} data Return an object with member _id, profile.name and a tasks object with the challenge tasks for the member
+ * @apiSuccess {Object} data Return an object with member _id, profile.name
+ *                           and a tasks object with the challenge tasks for the member.
+ *
+ * @apiSuccessExample {json} Success-Response:
+ * {
+ *   "data": {
+ *     "_id": "b0413351-405f-416f-8787-947ec1c85199",
+ *     "profile": {"name": "MadPink"},
+ *     "tasks": [
+ *       {
+ *         "_id": "9cd37426-0604-48c3-a950-894a6e72c156",
+ *       "text": "Make sure the place where you sleep is quiet, dark, and cool.",
+ *         "updatedAt": "2017-06-17T17:44:15.916Z",
+ *         "createdAt": "2017-06-17T17:44:15.916Z",
+ *         "reminders": [],
+ *         "group": {
+ *           "approval": {
+ *             "requested": false,
+ *             "approved": false,
+ *             "required": false
+ *           },
+ *           "assignedUsers": []
+ *         },
+ *         "challenge": {
+ *           "taskId": "6d3758b1-071b-4bfa-acd6-755147a7b5f6",
+ *           "id": "4db6bd82-b829-4bf2-bad2-535c14424a3d",
+ *           "shortName": "Take This June 2017"
+ *         },
+ *         "attribute": "str",
+ *         "priority": 1,
+ *         "value": 0,
+ *         "notes": "",
+ *         "type": "todo",
+ *         "checklist": [],
+ *         "collapseChecklist": false,
+ *         "completed": false,
+ *       },
+ *         "startDate": "2016-09-01T05:00:00.000Z",
+ *         "everyX": 1,
+ *         "frequency": "weekly",
+ *         "id": "b207a15e-8bfd-4aa7-9e64-1ba89699da06"
+ *       }
+ *     ]
+ *   }
  *
  * @apiUse ChallengeNotFound
  * @apiUse UserNotFound
@@ -351,49 +561,90 @@ api.getChallengeMemberProgress = {
     req.checkParams('challengeId', res.t('challengeIdRequired')).notEmpty().isUUID();
     req.checkParams('memberId', res.t('memberIdRequired')).notEmpty().isUUID();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let user = res.locals.user;
-    let challengeId = req.params.challengeId;
-    let memberId = req.params.memberId;
+    const { user } = res.locals;
+    const { challengeId } = req.params;
+    const { memberId } = req.params;
 
-    let member = await User.findById(memberId).select(`${nameFields} challenges`).exec();
-    if (!member) throw new NotFound(res.t('userWithIDNotFound', {userId: memberId}));
-
-    let challenge = await Challenge.findById(challengeId).exec();
+    const member = await User.findById(memberId).select(`${nameFields} challenges`).exec();
+    if (!member) throw new NotFound(res.t('userWithIDNotFound', { userId: memberId }));
+    const challenge = await Challenge.findById(challengeId).exec();
     if (!challenge) throw new NotFound(res.t('challengeNotFound'));
-
-    // optionalMembership is set to true because even if you're not member of the group you may be able to access the challenge
+    // optionalMembership is set to true because even if you're
+    // not member of the group you may be able to access the challenge
     // for example if you've been booted from it, are the leader or a site admin
-    let group = await Group.getGroup({user, groupId: challenge.group, fields: '_id type privacy', optionalMembership: true});
+    const group = await Group.getGroup({
+      user, groupId: challenge.group, fields: '_id type privacy', optionalMembership: true,
+    });
     if (!group || !challenge.canView(user, group)) throw new NotFound(res.t('challengeNotFound'));
     if (!challenge.isMember(member)) throw new NotFound(res.t('challengeMemberNotFound'));
 
-    let chalTasks = await Tasks.Task.find({
-      userId: memberId,
-      'challenge.id': challengeId,
+    const challengeTasks = await Tasks.Task.find({
+      userId: member._id,
+      'challenge.id': challenge._id,
     })
-    .select('-tags') // We don't want to return the tags publicly TODO same for other data?
-    .exec();
+      .select('-tags -checklist') // We don't want to return tags and checklists publicly
+      .lean()
+      .exec();
 
     // manually call toJSON with minimize: true so empty paths aren't returned
-    let response = member.toJSON({minimize: true});
+    const response = member.toJSON({ minimize: true });
     delete response.challenges;
-    response.tasks = chalTasks.map(chalTask => chalTask.toJSON({minimize: true}));
+    response.tasks = challengeTasks;
     res.respond(200, response);
   },
 };
 
 /**
- * @api {posts} /api/v3/members/send-private-message Send a private message to a member
+ * @api {get} /api/v3/members/:toUserId/objections/:interaction Get objections to interaction
+ * @apiDescription Get any objections that would occur
+ * if the given interaction was attempted - BETA.
+ *
+ * @apiVersion 3.0.0
+ * @apiName GetObjectionsToInteraction
+ * @apiGroup Member
+ *
+ * @apiParam (Path) {UUID} toUserId The user to interact with
+ * @apiParam (Path) {String="send-private-message","transfer-gems"} interaction Name of the
+ *                                                                              interaction
+ *                                                                              to query.
+ *
+ * @apiSuccess {Array} data Return an array of objections,
+ *                          if the interaction would be blocked; otherwise an empty array.
+ */
+api.getObjectionsToInteraction = {
+  method: 'GET',
+  url: '/members/:toUserId/objections/:interaction',
+  middlewares: [authWithHeaders()],
+  async handler (req, res) {
+    req.checkParams('toUserId', res.t('toUserIDRequired')).notEmpty().isUUID();
+    req.checkParams('interaction', res.t('interactionRequired')).notEmpty().isIn(KNOWN_INTERACTIONS);
+
+    const validationErrors = req.validationErrors();
+    if (validationErrors) throw validationErrors;
+
+    const sender = res.locals.user;
+    const receiver = await User.findById(req.params.toUserId).exec();
+    if (!receiver) throw new NotFound(res.t('userWithIDNotFound', { userId: req.params.toUserId }));
+
+    const { interaction } = req.params;
+    const response = sender.getObjectionsToInteraction(interaction, receiver);
+
+    res.respond(200, response.map(res.t));
+  },
+};
+
+/**
+ * @api {post} /api/v3/members/send-private-message Send a private message to a member
  * @apiName SendPrivateMessage
  * @apiGroup Member
  *
- * @apiParam {String} message Body parameter - The message
- * @apiParam {UUID} toUserId Body parameter - The user to contact
+ * @apiParam (Body) {String} message The message
+ * @apiParam (Body) {UUID} toUserId The id of the user to contact
  *
- * @apiSuccess {Object} data An empty Object
+ * @apiSuccess {Object} data.message The message just sent
  *
  * @apiUse UserNotFound
  */
@@ -405,56 +656,34 @@ api.sendPrivateMessage = {
     req.checkBody('message', res.t('messageRequired')).notEmpty();
     req.checkBody('toUserId', res.t('toUserIDRequired')).notEmpty().isUUID();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let sender = res.locals.user;
-    let message = req.body.message;
+    const sender = res.locals.user;
+    const sanitizedMessageText = sanitizeMessageText(req.body.message);
+    const message = (await highlightMentions(sanitizedMessageText))[0];
 
-    let receiver = await User.findById(req.body.toUserId).exec();
+    const receiver = await User.findById(req.body.toUserId).exec();
     if (!receiver) throw new NotFound(res.t('userNotFound'));
+    if (!receiver.flags.verifiedUsername) delete receiver.auth.local.username;
 
-    let userBlockedSender = receiver.inbox.blocks.indexOf(sender._id) !== -1;
-    let userIsBlockBySender = sender.inbox.blocks.indexOf(receiver._id) !== -1;
-    let userOptedOutOfMessaging = receiver.inbox.optOut;
+    const objections = sender.getObjectionsToInteraction('send-private-message', receiver);
+    if (objections.length > 0 && !sender.isAdmin()) throw new NotAuthorized(res.t(objections[0]));
 
-    if (userBlockedSender || userIsBlockBySender || userOptedOutOfMessaging) {
-      throw new NotAuthorized(res.t('notAuthorizedToSendMessageToThisUser'));
-    }
+    const messageSent = await sentMessage(sender, receiver, message, res.t);
 
-    await sender.sendMessage(receiver, { receiverMsg: message });
-
-    if (receiver.preferences.emailNotifications.newPM !== false) {
-      sendTxnEmail(receiver, 'new-pm', [
-        {name: 'SENDER', content: getUserInfo(sender, ['name']).name},
-        {name: 'PMS_INBOX_URL', content: '/#/options/groups/inbox'},
-      ]);
-    }
-    if (receiver.preferences.pushNotifications.newPM !== false) {
-      sendPushNotification(
-        receiver,
-        {
-          title: res.t('newPM'),
-          message: res.t('newPMInfo', {name: getUserInfo(sender, ['name']).name, message}),
-          identifier: 'newPM',
-          category: 'newPM',
-          payload: {replyTo: sender._id},
-        }
-      );
-    }
-
-    res.respond(200, {});
+    res.respond(200, { message: messageSent });
   },
 };
 
 /**
- * @api {posts} /api/v3/members/transfer-gems Send a gem gift to a member
+ * @api {post} /api/v3/members/transfer-gems Send a gem gift to a member
  * @apiName TransferGems
  * @apiGroup Member
  *
- * @apiParam {String} message Body parameter The message
- * @apiParam {UUID} toUserId Body parameter The toUser _id
- * @apiParam {Integer} gemAmount Body parameter The number of gems to send
+ * @apiParam (Body) {String} message The message to the user
+ * @apiParam (Body) {UUID} toUserId The user to send the gift to
+ * @apiParam (Body) {Integer} gemAmount The number of gems to send
  *
  * @apiSuccess {Object} data An empty Object
  *
@@ -468,20 +697,18 @@ api.transferGems = {
     req.checkBody('toUserId', res.t('toUserIDRequired')).notEmpty().isUUID();
     req.checkBody('gemAmount', res.t('gemAmountRequired')).notEmpty().isInt();
 
-    let validationErrors = req.validationErrors();
+    const validationErrors = req.validationErrors();
     if (validationErrors) throw validationErrors;
 
-    let sender = res.locals.user;
-
-    let receiver = await User.findById(req.body.toUserId).exec();
+    const sender = res.locals.user;
+    const receiver = await User.findById(req.body.toUserId).exec();
     if (!receiver) throw new NotFound(res.t('userNotFound'));
 
-    if (receiver._id === sender._id) {
-      throw new NotAuthorized(res.t('cannotSendGemsToYourself'));
-    }
+    const objections = sender.getObjectionsToInteraction('transfer-gems', receiver);
+    if (objections.length > 0) throw new NotAuthorized(res.t(objections[0]));
 
-    let gemAmount = req.body.gemAmount;
-    let amount = gemAmount / 4;
+    const { gemAmount } = req.body;
+    const amount = gemAmount / 4;
 
     if (amount <= 0 || sender.balance < amount) {
       throw new NotAuthorized(res.t('badAmountOfGemsToSend'));
@@ -489,13 +716,14 @@ api.transferGems = {
 
     receiver.balance += amount;
     sender.balance -= amount;
-    let promises = [receiver.save(), sender.save()];
-    await Bluebird.all(promises);
+    // @TODO necessary? Also saved when sending the inbox message
+    const promises = [receiver.save(), sender.save()];
+    await Promise.all(promises);
 
     // generate the message in both languages, so both users can understand it
-    let receiverLang = receiver.preferences.language;
-    let senderLang = sender.preferences.language;
-    let [receiverMsg, senderMsg] = [receiverLang, senderLang].map((lang) => {
+    const receiverLang = receiver.preferences.language;
+    const senderLang = sender.preferences.language;
+    const [receiverMsg, senderMsg] = [receiverLang, senderLang].map(lang => {
       let messageContent = res.t('privateMessageGiftGemsMessage', {
         receiverName: receiver.profile.name,
         senderName: sender.profile.name,
@@ -514,21 +742,21 @@ api.transferGems = {
       receiverMsg,
     });
 
-    let byUsername = getUserInfo(sender, ['name']).name;
+    const byUsername = getUserInfo(sender, ['name']).name;
 
     if (receiver.preferences.emailNotifications.giftedGems !== false) {
       sendTxnEmail(receiver, 'gifted-gems', [
-        {name: 'GIFTER', content: byUsername},
-        {name: 'X_GEMS_GIFTED', content: gemAmount},
+        { name: 'GIFTER', content: byUsername },
+        { name: 'X_GEMS_GIFTED', content: gemAmount },
       ]);
     }
     if (receiver.preferences.pushNotifications.giftedGems !== false) {
       sendPushNotification(receiver,
         {
           title: res.t('giftedGems', receiverLang),
-          message: res.t('giftedGemsInfo', {amount: gemAmount, name: byUsername}, receiverLang),
+          message: res.t('giftedGemsInfo', { amount: gemAmount, name: byUsername }, receiverLang),
           identifier: 'giftedGems',
-          payload: {replyTo: sender._id},
+          payload: { replyTo: sender._id },
         });
     }
 
@@ -536,5 +764,4 @@ api.transferGems = {
   },
 };
 
-
-module.exports = api;
+export default api;

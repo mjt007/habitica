@@ -1,808 +1,1250 @@
+import defaults from 'lodash/defaults';
+import find from 'lodash/find';
+import forEach from 'lodash/forEach';
+import upperFirst from 'lodash/upperFirst';
 import { ownsItem } from '../gear-helper';
+import { ATTRIBUTES } from '../../../constants';
 import t from '../../translation';
 
-let armor = {
+const armor = {
   lunarArmor: {
-    text: t('armorArmoireLunarArmorText'),
     notes: t('armorArmoireLunarArmorNotes', { str: 7, int: 7 }),
-    value: 100,
     str: 7,
     int: 7,
     set: 'soothing',
-    canOwn: ownsItem('armor_armoire_lunarArmor'),
   },
   gladiatorArmor: {
-    text: t('armorArmoireGladiatorArmorText'),
     notes: t('armorArmoireGladiatorArmorNotes', { str: 7, per: 7 }),
-    value: 100,
     str: 7,
     per: 7,
     set: 'gladiator',
-    canOwn: ownsItem('armor_armoire_gladiatorArmor'),
   },
   rancherRobes: {
-    text: t('armorArmoireRancherRobesText'),
     notes: t('armorArmoireRancherRobesNotes', { str: 5, per: 5, int: 5 }),
-    value: 100,
     str: 5,
     per: 5,
     int: 5,
     set: 'rancher',
-    canOwn: ownsItem('armor_armoire_rancherRobes'),
   },
   goldenToga: {
-    text: t('armorArmoireGoldenTogaText'),
-    notes: t('armorArmoireGoldenTogaNotes', { attrs: 8 }),
-    value: 100,
     str: 8,
     con: 8,
     set: 'goldenToga',
-    canOwn: ownsItem('armor_armoire_goldenToga'),
   },
   hornedIronArmor: {
-    text: t('armorArmoireHornedIronArmorText'),
-    notes: t('armorArmoireHornedIronArmorNotes', { con: 9, per: 7 }),
-    value: 100,
     con: 9,
     per: 7,
     set: 'hornedIron',
-    canOwn: ownsItem('armor_armoire_hornedIronArmor'),
   },
   plagueDoctorOvercoat: {
-    text: t('armorArmoirePlagueDoctorOvercoatText'),
-    notes: t('armorArmoirePlagueDoctorOvercoatNotes', { int: 6, str: 5, con: 6 }),
-    value: 100,
     int: 6,
     str: 5,
     con: 6,
     set: 'plagueDoctor',
-    canOwn: ownsItem('armor_armoire_plagueDoctorOvercoat'),
   },
   shepherdRobes: {
-    text: t('armorArmoireShepherdRobesText'),
-    notes: t('armorArmoireShepherdRobesNotes', { attrs: 9 }),
-    value: 100,
     str: 9,
     per: 9,
     set: 'shepherd',
-    canOwn: ownsItem('armor_armoire_shepherdRobes'),
   },
   royalRobes: {
-    text: t('armorArmoireRoyalRobesText'),
-    notes: t('armorArmoireRoyalRobesNotes', { attrs: 5 }),
-    value: 100,
     con: 5,
     per: 5,
     int: 5,
     set: 'royal',
-    canOwn: ownsItem('armor_armoire_royalRobes'),
   },
   crystalCrescentRobes: {
-    text: t('armorArmoireCrystalCrescentRobesText'),
-    notes: t('armorArmoireCrystalCrescentRobesNotes', { attrs: 7 }),
-    value: 100,
     per: 7,
     con: 7,
     set: 'crystalCrescent',
-    canOwn: ownsItem('armor_armoire_crystalCrescentRobes'),
   },
   dragonTamerArmor: {
-    text: t('armorArmoireDragonTamerArmorText'),
-    notes: t('armorArmoireDragonTamerArmorNotes', { con: 15 }),
-    value: 100,
     con: 15,
     set: 'dragonTamer',
-    canOwn: ownsItem('armor_armoire_dragonTamerArmor'),
   },
   barristerRobes: {
-    text: t('armorArmoireBarristerRobesText'),
-    notes: t('armorArmoireBarristerRobesNotes', { con: 10 }),
-    value: 100,
     con: 10,
     set: 'barrister',
-    canOwn: ownsItem('armor_armoire_barristerRobes'),
   },
   jesterCostume: {
-    text: t('armorArmoireJesterCostumeText'),
-    notes: t('armorArmoireJesterCostumeNotes', { int: 15 }),
-    value: 100,
     int: 15,
     set: 'jester',
-    canOwn: ownsItem('armor_armoire_jesterCostume'),
   },
   minerOveralls: {
-    text: t('armorArmoireMinerOverallsText'),
-    notes: t('armorArmoireMinerOverallsNotes', { con: 10 }),
-    value: 100,
     con: 10,
     set: 'miner',
-    canOwn: ownsItem('armor_armoire_minerOveralls'),
   },
   basicArcherArmor: {
-    text: t('armorArmoireBasicArcherArmorText'),
-    notes: t('armorArmoireBasicArcherArmorNotes', { per: 12 }),
-    value: 100,
     per: 12,
     set: 'basicArcher',
-    canOwn: ownsItem('armor_armoire_basicArcherArmor'),
   },
   graduateRobe: {
-    text: t('armorArmoireGraduateRobeText'),
-    notes: t('armorArmoireGraduateRobeNotes', { int: 10 }),
-    value: 100,
     int: 10,
     set: 'graduate',
-    canOwn: ownsItem('armor_armoire_graduateRobe'),
   },
   stripedSwimsuit: {
-    text: t('armorArmoireStripedSwimsuitText'),
-    notes: t('armorArmoireStripedSwimsuitNotes', { con: 13 }),
-    value: 100,
     con: 13,
     set: 'seaside',
-    canOwn: ownsItem('armor_armoire_stripedSwimsuit'),
   },
   cannoneerRags: {
-    text: t('armorArmoireCannoneerRagsText'),
-    notes: t('armorArmoireCannoneerRagsNotes', { con: 15 }),
-    value: 100,
     con: 15,
     set: 'cannoneer',
-    canOwn: ownsItem('armor_armoire_cannoneerRags'),
   },
   falconerArmor: {
-    text: t('armorArmoireFalconerArmorText'),
-    notes: t('armorArmoireFalconerArmorNotes', { con: 10 }),
-    value: 100,
     con: 10,
     set: 'falconer',
-    canOwn: ownsItem('armor_armoire_falconerArmor'),
   },
   vermilionArcherArmor: {
-    text: t('armorArmoireVermilionArcherArmorText'),
-    notes: t('armorArmoireVermilionArcherArmorNotes', { per: 15 }),
-    value: 100,
     per: 15,
     set: 'vermilionArcher',
-    canOwn: ownsItem('armor_armoire_vermilionArcherArmor'),
   },
   ogreArmor: {
-    text: t('armorArmoireOgreArmorText'),
-    notes: t('armorArmoireOgreArmorNotes', { con: 15 }),
-    value: 100,
     con: 15,
     set: 'ogre',
-    canOwn: ownsItem('armor_armoire_ogreArmor'),
   },
   ironBlueArcherArmor: {
-    text: t('armorArmoireIronBlueArcherArmorText'),
-    notes: t('armorArmoireIronBlueArcherArmorNotes', { str: 12 }),
-    value: 100,
     str: 12,
     set: 'blueArcher',
-    canOwn: ownsItem('armor_armoire_ironBlueArcherArmor'),
   },
   redPartyDress: {
-    text: t('armorArmoireRedPartyDressText'),
-    notes: t('armorArmoireRedPartyDressNotes', { attrs: 7 }),
-    value: 100,
     str: 7,
     con: 7,
     int: 7,
     set: 'redHairbow',
-    canOwn: ownsItem('armor_armoire_redPartyDress'),
   },
   woodElfArmor: {
-    text: t('armorArmoireWoodElfArmorText'),
-    notes: t('armorArmoireWoodElfArmorNotes', { per: 12 }),
-    value: 100,
     per: 12,
     set: 'woodElf',
-    canOwn: ownsItem('armor_armoire_woodElfArmor'),
   },
   ramFleeceRobes: {
-    text: t('armorArmoireRamFleeceRobesText'),
-    notes: t('armorArmoireRamFleeceRobesNotes', { con: 9, str: 7 }),
-    value: 100,
     con: 9,
     str: 7,
     set: 'ramBarbarian',
-    canOwn: ownsItem('armor_armoire_ramFleeceRobes'),
   },
   gownOfHearts: {
-    text: t('armorArmoireGownOfHeartsText'),
-    notes: t('armorArmoireGownOfHeartsNotes', { con: 13 }),
-    value: 100,
     con: 13,
     set: 'queenOfHearts',
-    canOwn: ownsItem('armor_armoire_gownOfHearts'),
+  },
+  mushroomDruidArmor: {
+    con: 7,
+    per: 8,
+    set: 'mushroomDruid',
+  },
+  greenFestivalYukata: {
+    con: 8,
+    per: 8,
+    set: 'festivalAttire',
+  },
+  merchantTunic: {
+    per: 10,
+    set: 'merchant',
+  },
+  vikingTunic: {
+    con: 6,
+    str: 8,
+    set: 'viking',
+  },
+  swanDancerTutu: {
+    int: 8,
+    str: 8,
+    set: 'swanDancer',
+  },
+  yellowPartyDress: {
+    per: 7,
+    int: 7,
+    str: 7,
+    set: 'yellowHairbow',
+  },
+  antiProcrastinationArmor: {
+    str: 15,
+    set: 'antiProcrastination',
+  },
+  farrierOutfit: {
+    con: 6,
+    int: 6,
+    per: 6,
+    set: 'farrier',
+  },
+  candlestickMakerOutfit: {
+    con: 12,
+    set: 'candlestickMaker',
+  },
+  wovenRobes: {
+    con: 8,
+    int: 9,
+    set: 'weaver',
+  },
+  lamplightersGreatcoat: {
+    per: 14,
+    set: 'lamplighter',
+  },
+  coachDriverLivery: {
+    str: 12,
+    set: 'coachDriver',
+  },
+  robeOfDiamonds: {
+    per: 13,
+    set: 'kingOfDiamonds',
+  },
+  flutteryFrock: {
+    con: 5,
+    per: 5,
+    str: 5,
+    set: 'fluttery',
+  },
+  cobblersCoveralls: {
+    per: 7,
+    str: 7,
+    set: 'cobbler',
+  },
+  glassblowersCoveralls: {
+    con: 8,
+    set: 'glassblower',
+  },
+  bluePartyDress: {
+    con: 7,
+    per: 7,
+    str: 7,
+    set: 'blueHairbow',
+  },
+  piraticalPrincessGown: {
+    per: 7,
+    set: 'piraticalPrincess',
+  },
+  jeweledArcherArmor: {
+    con: 15,
+    set: 'jeweledArcher',
+  },
+  coverallsOfBookbinding: {
+    con: 10,
+    per: 5,
+    set: 'bookbinder',
+  },
+  robeOfSpades: {
+    str: 13,
+    set: 'aceOfSpades',
+  },
+  softBlueSuit: {
+    int: 10,
+    per: 5,
+    set: 'blueLoungewear',
+  },
+  softGreenSuit: {
+    int: 7,
+    con: 7,
+    set: 'greenLoungewear',
+  },
+  softRedSuit: {
+    int: 8,
+    str: 5,
+    set: 'redLoungewear',
+  },
+  scribesRobe: {
+    int: 7,
+    per: 7,
+    set: 'scribe',
+  },
+  chefsJacket: {
+    int: 10,
+    set: 'chef',
+  },
+  vernalVestment: {
+    str: 6,
+    int: 6,
+    set: 'vernalVestments',
+  },
+  nephriteArmor: {
+    str: 7,
+    per: 6,
+    set: 'nephrite',
+  },
+  boatingJacket: {
+    int: 6,
+    per: 6,
+    str: 6,
+    set: 'boating',
+  },
+  astronomersRobe: {
+    per: 8,
+    con: 8,
+    set: 'astronomer',
+  },
+  invernessCape: {
+    per: 7,
+    int: 7,
+    set: 'detective',
+  },
+  shadowMastersRobe: {
+    con: 12,
+    set: 'shadowMaster',
+  },
+  alchemistsRobe: {
+    con: 8,
+    per: 5,
+    set: 'alchemist',
+  },
+  duffleCoat: {
+    con: 7,
+    per: 7,
+    set: 'duffle',
+  },
+  layerCakeArmor: {
+    con: 13,
+    set: 'birthday',
+  },
+  matchMakersApron: {
+    con: 7,
+    str: 7,
+    int: 7,
+    set: 'matchMaker',
+  },
+  baseballUniform: {
+    con: 10,
+    str: 10,
+    set: 'baseball',
+  },
+  boxArmor: {
+    per: 5,
+    con: 5,
+    set: 'paperKnight',
+  },
+  fiddlersCoat: {
+    con: 6,
+    set: 'fiddler',
+  },
+  pirateOutfit: {
+    con: 4,
+    int: 4,
+    set: 'pirate',
+  },
+  heroicHerbalistRobe: {
+    con: 7,
+    int: 7,
+    set: 'herbalist',
+  },
+  guardiansGown: {
+    int: 7,
+    set: 'grazerGuardian',
+  },
+  autumnEnchantersCloak: {
+    int: 12,
+    set: 'autumnEnchanter',
+  },
+  doubletOfClubs: {
+    con: 10,
+    set: 'jackOfClubs',
+  },
+  dressingGown: {
+    con: 12,
+    set: 'dressingGown',
+  },
+  blueMoonShozoku: {
+    con: 8,
+    set: 'blueMoon',
+  },
+  softPinkSuit: {
+    per: 12,
+    set: 'pinkLoungewear',
+  },
+  jadeArmor: {
+    per: 8,
+    set: 'jadeWarrior',
   },
 };
 
-let eyewear = {
+const body = {
+  cozyScarf: {
+    con: 5,
+    per: 5,
+    set: 'lamplighter',
+  },
+  lifeguardWhistle: {
+    int: 12,
+    set: 'lifeguard',
+  },
+};
+
+const eyewear = {
   plagueDoctorMask: {
-    text: t('eyewearArmoirePlagueDoctorMaskText'),
-    notes: t('eyewearArmoirePlagueDoctorMaskNotes'),
-    value: 100,
+    con: 5,
+    int: 5,
     set: 'plagueDoctor',
-    canOwn: ownsItem('eyewear_armoire_plagueDoctorMask'),
+  },
+  goofyGlasses: {
+    per: 10,
   },
 };
 
-let head = {
+const head = {
   lunarCrown: {
-    text: t('headArmoireLunarCrownText'),
     notes: t('headArmoireLunarCrownNotes', { con: 7, per: 7 }),
-    value: 100,
     con: 7,
     per: 7,
     set: 'soothing',
-    canOwn: ownsItem('head_armoire_lunarCrown'),
   },
   redHairbow: {
-    text: t('headArmoireRedHairbowText'),
     notes: t('headArmoireRedHairbowNotes', { str: 5, int: 5, con: 5 }),
-    value: 100,
     str: 5,
     int: 5,
     con: 5,
     set: 'redHairbow',
-    canOwn: ownsItem('head_armoire_redHairbow'),
   },
   violetFloppyHat: {
-    text: t('headArmoireVioletFloppyHatText'),
     notes: t('headArmoireVioletFloppyHatNotes', { per: 5, int: 5, con: 5 }),
-    value: 100,
     per: 5,
     int: 5,
     con: 5,
-    canOwn: ownsItem('head_armoire_violetFloppyHat'),
   },
   gladiatorHelm: {
-    text: t('headArmoireGladiatorHelmText'),
     notes: t('headArmoireGladiatorHelmNotes', { per: 7, int: 7 }),
-    value: 100,
     per: 7,
     int: 7,
     set: 'gladiator',
-    canOwn: ownsItem('head_armoire_gladiatorHelm'),
   },
   rancherHat: {
-    text: t('headArmoireRancherHatText'),
     notes: t('headArmoireRancherHatNotes', { str: 5, per: 5, int: 5 }),
-    value: 100,
     str: 5,
     per: 5,
     int: 5,
     set: 'rancher',
-    canOwn: ownsItem('head_armoire_rancherHat'),
   },
   royalCrown: {
-    text: t('headArmoireRoyalCrownText'),
-    notes: t('headArmoireRoyalCrownNotes', { str: 10 }),
-    value: 100,
     str: 10,
     set: 'royal',
-    canOwn: ownsItem('head_armoire_royalCrown'),
   },
   blueHairbow: {
-    text: t('headArmoireBlueHairbowText'),
     notes: t('headArmoireBlueHairbowNotes', { per: 5, int: 5, con: 5 }),
-    value: 100,
     per: 5,
     int: 5,
     con: 5,
-    canOwn: ownsItem('head_armoire_blueHairbow'),
+    set: 'blueHairbow',
   },
   goldenLaurels: {
-    text: t('headArmoireGoldenLaurelsText'),
-    notes: t('headArmoireGoldenLaurelsNotes', { attrs: 8 }),
-    value: 100,
     per: 8,
     con: 8,
     set: 'goldenToga',
-    canOwn: ownsItem('head_armoire_goldenLaurels'),
   },
   hornedIronHelm: {
-    text: t('headArmoireHornedIronHelmText'),
-    notes: t('headArmoireHornedIronHelmNotes', { con: 9, str: 7 }),
-    value: 100,
     con: 9,
     str: 7,
     set: 'hornedIron',
-    canOwn: ownsItem('head_armoire_hornedIronHelm'),
   },
   yellowHairbow: {
-    text: t('headArmoireYellowHairbowText'),
-    notes: t('headArmoireYellowHairbowNotes', { attrs: 5 }),
-    value: 100,
     int: 5,
     per: 5,
     str: 5,
-    canOwn: ownsItem('head_armoire_yellowHairbow'),
+    set: 'yellowHairbow',
   },
   redFloppyHat: {
-    text: t('headArmoireRedFloppyHatText'),
-    notes: t('headArmoireRedFloppyHatNotes', { attrs: 6 }),
-    value: 100,
     con: 6,
     int: 6,
     per: 6,
-    canOwn: ownsItem('head_armoire_redFloppyHat'),
+    set: 'redLoungewear',
   },
   plagueDoctorHat: {
-    text: t('headArmoirePlagueDoctorHatText'),
-    notes: t('headArmoirePlagueDoctorHatNotes', { int: 5, str: 6, con: 5 }),
-    value: 100,
     int: 5,
     str: 6,
     con: 5,
     set: 'plagueDoctor',
-    canOwn: ownsItem('head_armoire_plagueDoctorHat'),
   },
   blackCat: {
-    text: t('headArmoireBlackCatText'),
-    notes: t('headArmoireBlackCatNotes', { attrs: 9 }),
-    value: 100,
     int: 9,
     per: 9,
-    canOwn: ownsItem('head_armoire_blackCat'),
   },
   orangeCat: {
-    text: t('headArmoireOrangeCatText'),
-    notes: t('headArmoireOrangeCatNotes', { attrs: 9 }),
-    value: 100,
     con: 9,
     str: 9,
-    canOwn: ownsItem('head_armoire_orangeCat'),
   },
   blueFloppyHat: {
-    text: t('headArmoireBlueFloppyHatText'),
-    notes: t('headArmoireBlueFloppyHatNotes', { attrs: 7 }),
-    value: 100,
     per: 7,
     int: 7,
     con: 7,
-    canOwn: ownsItem('head_armoire_blueFloppyHat'),
+    set: 'blueLoungewear',
   },
   shepherdHeaddress: {
-    text: t('headArmoireShepherdHeaddressText'),
-    notes: t('headArmoireShepherdHeaddressNotes', { int: 9 }),
-    value: 100,
     int: 9,
     set: 'shepherd',
-    canOwn: ownsItem('head_armoire_shepherdHeaddress'),
   },
   crystalCrescentHat: {
-    text: t('headArmoireCrystalCrescentHatText'),
-    notes: t('headArmoireCrystalCrescentHatNotes', { attrs: 7 }),
-    value: 100,
     int: 7,
     per: 7,
     set: 'crystalCrescent',
-    canOwn: ownsItem('head_armoire_crystalCrescentHat'),
   },
   dragonTamerHelm: {
-    text: t('headArmoireDragonTamerHelmText'),
-    notes: t('headArmoireDragonTamerHelmNotes', { int: 15 }),
-    value: 100,
     int: 15,
     set: 'dragonTamer',
-    canOwn: ownsItem('head_armoire_dragonTamerHelm'),
   },
   barristerWig: {
-    text: t('headArmoireBarristerWigText'),
-    notes: t('headArmoireBarristerWigNotes', { str: 10 }),
-    value: 100,
     str: 10,
     set: 'barrister',
-    canOwn: ownsItem('head_armoire_barristerWig'),
   },
   jesterCap: {
-    text: t('headArmoireJesterCapText'),
-    notes: t('headArmoireJesterCapNotes', { per: 15 }),
-    value: 100,
     per: 15,
     set: 'jester',
-    canOwn: ownsItem('head_armoire_jesterCap'),
   },
   minerHelmet: {
-    text: t('headArmoireMinerHelmetText'),
-    notes: t('headArmoireMinerHelmetNotes', { int: 5 }),
-    value: 100,
     int: 5,
     set: 'miner',
-    canOwn: ownsItem('head_armoire_minerHelmet'),
   },
   basicArcherCap: {
-    text: t('headArmoireBasicArcherCapText'),
-    notes: t('headArmoireBasicArcherCapNotes', { per: 6 }),
-    value: 100,
     per: 6,
     set: 'basicArcher',
-    canOwn: ownsItem('head_armoire_basicArcherCap'),
   },
   graduateCap: {
-    text: t('headArmoireGraduateCapText'),
-    notes: t('headArmoireGraduateCapNotes', { int: 9 }),
-    value: 100,
     int: 9,
     set: 'graduate',
-    canOwn: ownsItem('head_armoire_graduateCap'),
   },
   greenFloppyHat: {
-    text: t('headArmoireGreenFloppyHatText'),
-    notes: t('headArmoireGreenFloppyHatNotes', { attrs: 8 }),
-    value: 100,
     per: 8,
     int: 8,
     con: 8,
-    canOwn: ownsItem('head_armoire_greenFloppyHat'),
+    set: 'greenLoungewear',
   },
   cannoneerBandanna: {
-    text: t('headArmoireCannoneerBandannaText'),
-    notes: t('headArmoireCannoneerBandannaNotes', { attrs: 15 }),
-    value: 100,
     int: 15,
     per: 15,
     set: 'cannoneer',
-    canOwn: ownsItem('head_armoire_cannoneerBandanna'),
   },
   falconerCap: {
-    text: t('headArmoireFalconerCapText'),
-    notes: t('headArmoireFalconerCapNotes', { int: 10 }),
-    value: 100,
     int: 10,
     set: 'falconer',
-    canOwn: ownsItem('head_armoire_falconerCap'),
   },
   vermilionArcherHelm: {
-    text: t('headArmoireVermilionArcherHelmText'),
-    notes: t('headArmoireVermilionArcherHelmNotes', { per: 12 }),
-    value: 100,
     per: 12,
     set: 'vermilionArcher',
-    canOwn: ownsItem('head_armoire_vermilionArcherHelm'),
   },
   ogreMask: {
-    text: t('headArmoireOgreMaskText'),
-    notes: t('headArmoireOgreMaskNotes', { attrs: 7 }),
-    value: 100,
     con: 7,
     str: 7,
     set: 'ogre',
-    canOwn: ownsItem('head_armoire_ogreMask'),
   },
   ironBlueArcherHelm: {
-    text: t('headArmoireIronBlueArcherHelmText'),
-    notes: t('headArmoireIronBlueArcherHelmNotes', { con: 9 }),
-    value: 100,
     con: 9,
     set: 'blueArcher',
-    canOwn: ownsItem('head_armoire_ironBlueArcherHelm'),
   },
   woodElfHelm: {
-    text: t('headArmoireWoodElfHelmText'),
-    notes: t('headArmoireWoodElfHelmNotes', { con: 12 }),
-    value: 100,
     con: 12,
     set: 'woodElf',
-    canOwn: ownsItem('head_armoire_woodElfHelm'),
   },
   ramHeaddress: {
-    text: t('headArmoireRamHeaddressText'),
-    notes: t('headArmoireRamHeaddressNotes', { con: 9, per: 7 }),
-    value: 100,
     con: 9,
     per: 7,
     set: 'ramBarbarian',
-    canOwn: ownsItem('head_armoire_ramHeaddress'),
   },
   crownOfHearts: {
-    text: t('headArmoireCrownOfHeartsText'),
-    notes: t('headArmoireCrownOfHeartsNotes', { str: 13 }),
-    value: 100,
     str: 13,
     set: 'queenOfHearts',
-    canOwn: ownsItem('head_armoire_crownOfHearts'),
+  },
+  mushroomDruidCap: {
+    int: 6,
+    str: 7,
+    set: 'mushroomDruid',
+  },
+  merchantChaperon: {
+    int: 7,
+    per: 7,
+    set: 'merchant',
+  },
+  vikingHelm: {
+    str: 6,
+    per: 8,
+    set: 'viking',
+  },
+  swanFeatherCrown: {
+    int: 8,
+    set: 'swanDancer',
+  },
+  antiProcrastinationHelm: {
+    per: 15,
+    set: 'antiProcrastination',
+  },
+  candlestickMakerHat: {
+    int: 6,
+    per: 6,
+    set: 'candlestickMaker',
+  },
+  lamplightersTopHat: {
+    con: 14,
+    set: 'lamplighter',
+  },
+  coachDriversHat: {
+    int: 12,
+    set: 'coachDriver',
+  },
+  crownOfDiamonds: {
+    int: 13,
+    set: 'kingOfDiamonds',
+  },
+  flutteryWig: {
+    int: 5,
+    per: 5,
+    str: 5,
+    set: 'fluttery',
+  },
+  bigWig: {
+    str: 10,
+  },
+  paperBag: {
+    con: 10,
+  },
+  birdsNest: {
+    int: 10,
+  },
+  glassblowersHat: {
+    per: 8,
+    set: 'glassblower',
+  },
+  piraticalPrincessHeaddress: {
+    per: 8,
+    int: 8,
+    set: 'piraticalPrincess',
+  },
+  jeweledArcherHelm: {
+    int: 15,
+    set: 'jeweledArcher',
+  },
+  veilOfSpades: {
+    per: 13,
+    set: 'aceOfSpades',
+  },
+  toqueBlanche: {
+    per: 10,
+    set: 'chef',
+  },
+  vernalHennin: {
+    per: 12,
+    set: 'vernalVestments',
+  },
+  tricornHat: {
+    per: 10,
+  },
+  nephriteHelm: {
+    per: 7,
+    int: 6,
+    set: 'nephrite',
+  },
+  boaterHat: {
+    str: 6,
+    con: 6,
+    per: 6,
+    set: 'boating',
+  },
+  astronomersHat: {
+    con: 10,
+    set: 'astronomer',
+  },
+  deerstalkerCap: {
+    int: 14,
+    set: 'detective',
+  },
+  shadowMastersHood: {
+    per: 5,
+    con: 5,
+    set: 'shadowMaster',
+  },
+  alchemistsHat: {
+    per: 7,
+    set: 'alchemist',
+  },
+  earflapHat: {
+    int: 7,
+    str: 7,
+    set: 'duffle',
+  },
+  frostedHelm: {
+    int: 13,
+    set: 'birthday',
+  },
+  matchMakersBeret: {
+    con: 15,
+    set: 'matchMaker',
+  },
+  baseballCap: {
+    con: 8,
+    str: 8,
+    set: 'baseball',
+  },
+  fiddlersCap: {
+    per: 6,
+    set: 'fiddler',
+  },
+  heroicHerbalistCrispinette: {
+    int: 9,
+    set: 'herbalist',
+  },
+  guardiansBonnet: {
+    con: 8,
+    set: 'grazerGuardian',
+  },
+  hornsOfAutumn: {
+    str: 12,
+    set: 'autumnEnchanter',
+  },
+  capOfClubs: {
+    int: 10,
+    set: 'jackOfClubs',
+  },
+  nightcap: {
+    per: 12,
+    set: 'dressingGown',
+  },
+  blueMoonHelm: {
+    int: 8,
+    set: 'blueMoon',
+  },
+  pinkFloppyHat: {
+    int: 12,
+    set: 'pinkLoungewear',
+  },
+  jadeHelm: {
+    con: 8,
+    set: 'jadeWarrior',
   },
 };
 
-let shield = {
+const shield = {
   gladiatorShield: {
-    text: t('shieldArmoireGladiatorShieldText'),
     notes: t('shieldArmoireGladiatorShieldNotes', { con: 5, str: 5 }),
-    value: 100,
     con: 5,
     str: 5,
     set: 'gladiator',
-    canOwn: ownsItem('shield_armoire_gladiatorShield'),
   },
   midnightShield: {
-    text: t('shieldArmoireMidnightShieldText'),
-    notes: t('shieldArmoireMidnightShieldNotes', { con: 10, str: 2 }),
-    value: 100,
     con: 10,
     str: 2,
-    canOwn: ownsItem('shield_armoire_midnightShield'),
   },
   royalCane: {
-    text: t('shieldArmoireRoyalCaneText'),
-    notes: t('shieldArmoireRoyalCaneNotes', { attrs: 5 }),
-    value: 100,
     con: 5,
     int: 5,
     per: 5,
     set: 'royal',
-    canOwn: ownsItem('shield_armoire_royalCane'),
   },
   dragonTamerShield: {
-    text: t('shieldArmoireDragonTamerShieldText'),
-    notes: t('shieldArmoireDragonTamerShieldNotes', { per: 15 }),
-    value: 100,
     per: 15,
     set: 'dragonTamer',
-    canOwn: ownsItem('shield_armoire_dragonTamerShield'),
   },
   mysticLamp: {
-    text: t('shieldArmoireMysticLampText'),
-    notes: t('shieldArmoireMysticLampNotes', { per: 15 }),
-    value: 100,
     per: 15,
-    canOwn: ownsItem('shield_armoire_mysticLamp'),
   },
   floralBouquet: {
-    text: t('shieldArmoireFloralBouquetText'),
-    notes: t('shieldArmoireFloralBouquetNotes', { con: 3 }),
-    value: 100,
     con: 3,
-    canOwn: ownsItem('shield_armoire_floralBouquet'),
   },
   sandyBucket: {
-    text: t('shieldArmoireSandyBucketText'),
-    notes: t('shieldArmoireSandyBucketNotes', { per: 10 }),
-    value: 100,
     per: 10,
     set: 'seaside',
-    canOwn: ownsItem('shield_armoire_sandyBucket'),
   },
   perchingFalcon: {
-    text: t('shieldArmoirePerchingFalconText'),
-    notes: t('shieldArmoirePerchingFalconNotes', { str: 16 }),
-    value: 100,
     str: 16,
     set: 'falconer',
-    canOwn: ownsItem('shield_armoire_perchingFalcon'),
   },
   ramHornShield: {
-    text: t('shieldArmoireRamHornShieldText'),
-    notes: t('shieldArmoireRamHornShieldNotes', { attrs: 7 }),
-    value: 100,
     str: 7,
     con: 7,
     set: 'ramBarbarian',
-    canOwn: ownsItem('shield_armoire_ramHornShield'),
   },
   redRose: {
-    text: t('shieldArmoireRedRoseText'),
-    notes: t('shieldArmoireRedRoseNotes', { per: 10 }),
-    value: 100,
     per: 10,
-    canOwn: ownsItem('shield_armoire_redRose'),
+  },
+  mushroomDruidShield: {
+    con: 9,
+    str: 8,
+    set: 'mushroomDruid',
+  },
+  festivalParasol: {
+    con: 8,
+    set: 'festivalAttire',
+  },
+  vikingShield: {
+    per: 6,
+    int: 8,
+    set: 'viking',
+  },
+  swanFeatherFan: {
+    str: 8,
+    set: 'swanDancer',
+  },
+  goldenBaton: {
+    int: 4,
+    str: 4,
+  },
+  antiProcrastinationShield: {
+    con: 15,
+    set: 'antiProcrastination',
+  },
+  horseshoe: {
+    con: 6,
+    per: 6,
+    str: 6,
+    set: 'farrier',
+  },
+  handmadeCandlestick: {
+    str: 12,
+    set: 'candlestickMaker',
+  },
+  weaversShuttle: {
+    per: 9,
+    int: 8,
+    set: 'weaver',
+  },
+  shieldOfDiamonds: {
+    con: 10,
+    set: 'kingOfDiamonds',
+  },
+  flutteryFan: {
+    con: 5,
+    int: 5,
+    per: 5,
+    set: 'fluttery',
+  },
+  fancyShoe: {
+    int: 7,
+    per: 7,
+    set: 'cobbler',
+  },
+  fancyBlownGlassVase: {
+    int: 6,
+    set: 'glassblower',
+  },
+  piraticalSkullShield: {
+    per: 4,
+    int: 4,
+    set: 'piraticalPrincess',
+  },
+  unfinishedTome: {
+    int: 10,
+    set: 'bookbinder',
+  },
+  softBluePillow: {
+    con: 10,
+    set: 'blueLoungewear',
+  },
+  softGreenPillow: {
+    con: 8,
+    int: 6,
+    set: 'greenLoungewear',
+  },
+  softRedPillow: {
+    con: 5,
+    str: 5,
+    set: 'redLoungewear',
+  },
+  mightyQuill: {
+    per: 9,
+    set: 'scribe',
+  },
+  mightyPizza: {
+    per: 8,
+    set: 'chef',
+  },
+  trustyUmbrella: {
+    int: 7,
+    set: 'detective',
+  },
+  polishedPocketwatch: {
+    int: 9,
+  },
+  masteredShadow: {
+    per: 5,
+    con: 5,
+    set: 'shadowMaster',
+  },
+  alchemistsScale: {
+    int: 7,
+    set: 'alchemist',
+  },
+  birthdayBanner: {
+    str: 7,
+    set: 'birthday',
+  },
+  perfectMatch: {
+    per: 15,
+    set: 'matchMaker',
+  },
+  baseballGlove: {
+    str: 9,
+    set: 'baseball',
+  },
+  hobbyHorse: {
+    per: 4,
+    con: 4,
+    set: 'paperKnight',
+  },
+  fiddle: {
+    int: 6,
+    set: 'fiddler',
+  },
+  lifeBuoy: {
+    con: 12,
+    set: 'lifeguard',
+  },
+  piratesCompanion: {
+    per: 8,
+    set: 'pirate',
+  },
+  mortarAndPestle: {
+    con: 9,
+    set: 'herbalist',
+  },
+  darkAutumnFlame: {
+    con: 12,
+    set: 'autumnEnchanter',
+  },
+  blueMoonSai: {
+    per: 8,
+    set: 'blueMoon',
+  },
+  softPinkPillow: {
+    str: 6,
+    con: 6,
+    set: 'pinkLoungewear',
   },
 };
 
-let headAccessory = {
+const headAccessory = {
   comicalArrow: {
-    text: t('headAccessoryArmoireComicalArrowText'),
-    notes: t('headAccessoryArmoireComicalArrowNotes'),
-    value: 100,
-    canOwn: ownsItem('headAccessory_armoire_comicalArrow'),
+    str: 10,
+  },
+  gogglesOfBookbinding: {
+    per: 8,
+    set: 'bookbinder',
   },
 };
 
-let weapon = {
+const weapon = {
   basicCrossbow: {
-    text: t('weaponArmoireBasicCrossbowText'),
     notes: t('weaponArmoireBasicCrossbowNotes', { str: 5, per: 5, con: 5 }),
-    value: 100,
     str: 5,
     per: 5,
     con: 5,
-    canOwn: ownsItem('weapon_armoire_basicCrossbow'),
   },
   lunarSceptre: {
-    text: t('weaponArmoireLunarSceptreText'),
     notes: t('weaponArmoireLunarSceptreNotes', { con: 7, int: 7 }),
-    value: 100,
     con: 7,
     int: 7,
     set: 'soothing',
-    canOwn: ownsItem('weapon_armoire_lunarSceptre'),
   },
   rancherLasso: {
     twoHanded: true,
-    text: t('weaponArmoireRancherLassoText'),
     notes: t('weaponArmoireRancherLassoNotes', { str: 5, per: 5, int: 5 }),
-    value: 100,
     str: 5,
     per: 5,
     int: 5,
     set: 'rancher',
-    canOwn: ownsItem('weapon_armoire_rancherLasso'),
   },
   mythmakerSword: {
-    text: t('weaponArmoireMythmakerSwordText'),
-    notes: t('weaponArmoireMythmakerSwordNotes', { attrs: 6 }),
-    value: 100,
     str: 6,
     per: 6,
     set: 'goldenToga',
-    canOwn: ownsItem('weapon_armoire_mythmakerSword'),
   },
   ironCrook: {
-    text: t('weaponArmoireIronCrookText'),
-    notes: t('weaponArmoireIronCrookNotes', { attrs: 7 }),
-    value: 100,
     str: 7,
     per: 7,
     set: 'hornedIron',
-    canOwn: ownsItem('weapon_armoire_ironCrook'),
   },
   goldWingStaff: {
-    text: t('weaponArmoireGoldWingStaffText'),
-    notes: t('weaponArmoireGoldWingStaffNotes', { attrs: 4 }),
-    value: 100,
     con: 4,
     int: 4,
     per: 4,
     str: 4,
-    canOwn: ownsItem('weapon_armoire_goldWingStaff'),
   },
   batWand: {
-    text: t('weaponArmoireBatWandText'),
-    notes: t('weaponArmoireBatWandNotes', { int: 10, per: 2 }),
-    value: 100,
     int: 10,
     per: 2,
-    canOwn: ownsItem('weapon_armoire_batWand'),
   },
   shepherdsCrook: {
-    text: t('weaponArmoireShepherdsCrookText'),
-    notes: t('weaponArmoireShepherdsCrookNotes', { con: 9 }),
-    value: 100,
     con: 9,
     set: 'shepherd',
-    canOwn: ownsItem('weapon_armoire_shepherdsCrook'),
   },
   crystalCrescentStaff: {
-    text: t('weaponArmoireCrystalCrescentStaffText'),
-    notes: t('weaponArmoireCrystalCrescentStaffNotes', { attrs: 7 }),
-    value: 100,
     int: 7,
     str: 7,
     set: 'crystalCrescent',
-    canOwn: ownsItem('weapon_armoire_crystalCrescentStaff'),
   },
   blueLongbow: {
-    text: t('weaponArmoireBlueLongbowText'),
-    notes: t('weaponArmoireBlueLongbowNotes', { per: 9, con: 8, str: 7 }),
-    value: 100,
     per: 9,
     con: 8,
     str: 7,
     twoHanded: true,
     set: 'blueArcher',
-    canOwn: ownsItem('weapon_armoire_blueLongbow'),
   },
   glowingSpear: {
-    text: t('weaponArmoireGlowingSpearText'),
-    notes: t('weaponArmoireGlowingSpearNotes', { str: 15 }),
-    value: 100,
     str: 15,
-    canOwn: ownsItem('weapon_armoire_glowingSpear'),
   },
   barristerGavel: {
-    text: t('weaponArmoireBarristerGavelText'),
-    notes: t('weaponArmoireBarristerGavelNotes', { attrs: 5 }),
-    value: 100,
     str: 5,
     con: 5,
     set: 'barrister',
-    canOwn: ownsItem('weapon_armoire_barristerGavel'),
   },
   jesterBaton: {
-    text: t('weaponArmoireJesterBatonText'),
-    notes: t('weaponArmoireJesterBatonNotes', { attrs: 8 }),
-    value: 100,
     int: 8,
     per: 8,
     set: 'jester',
-    canOwn: ownsItem('weapon_armoire_jesterBaton'),
   },
   miningPickax: {
-    text: t('weaponArmoireMiningPickaxText'),
-    notes: t('weaponArmoireMiningPickaxNotes', { per: 15 }),
-    value: 100,
     per: 15,
     set: 'miner',
-    canOwn: ownsItem('weapon_armoire_miningPickax'),
   },
   basicLongbow: {
-    text: t('weaponArmoireBasicLongbowText'),
-    notes: t('weaponArmoireBasicLongbowNotes', { str: 6 }),
-    value: 100,
     str: 6,
     twoHanded: true,
     set: 'basicArcher',
-    canOwn: ownsItem('weapon_armoire_basicLongbow'),
   },
   habiticanDiploma: {
-    text: t('weaponArmoireHabiticanDiplomaText'),
-    notes: t('weaponArmoireHabiticanDiplomaNotes', { int: 11 }),
-    value: 100,
     int: 11,
     set: 'graduate',
-    canOwn: ownsItem('weapon_armoire_habiticanDiploma'),
   },
   sandySpade: {
-    text: t('weaponArmoireSandySpadeText'),
-    notes: t('weaponArmoireSandySpadeNotes', { str: 10 }),
-    value: 100,
     str: 10,
     set: 'seaside',
-    canOwn: ownsItem('weapon_armoire_sandySpade'),
   },
   cannon: {
-    text: t('weaponArmoireCannonText'),
-    notes: t('weaponArmoireCannonNotes', { str: 15 }),
-    value: 100,
     str: 15,
     set: 'cannoneer',
-    canOwn: ownsItem('weapon_armoire_cannon'),
   },
   vermilionArcherBow: {
-    text: t('weaponArmoireVermilionArcherBowText'),
-    notes: t('weaponArmoireVermilionArcherBowNotes', { str: 15 }),
-    value: 100,
     str: 15,
     twoHanded: true,
     set: 'vermilionArcher',
-    canOwn: ownsItem('weapon_armoire_vermilionArcherBow'),
   },
   ogreClub: {
-    text: t('weaponArmoireOgreClubText'),
-    notes: t('weaponArmoireOgreClubNotes', { str: 15 }),
-    value: 100,
     str: 15,
     set: 'ogre',
-    canOwn: ownsItem('weapon_armoire_ogreClub'),
   },
   woodElfStaff: {
-    text: t('weaponArmoireWoodElfStaffText'),
-    notes: t('weaponArmoireWoodElfStaffNotes', { int: 12 }),
-    value: 100,
     int: 12,
     set: 'woodElf',
-    canOwn: ownsItem('weapon_armoire_woodElfStaff'),
   },
   wandOfHearts: {
-    text: t('weaponArmoireWandOfHeartsText'),
-    notes: t('weaponArmoireWandOfHeartsNotes', { int: 13 }),
-    value: 100,
     int: 13,
     set: 'queenOfHearts',
-    canOwn: ownsItem('weapon_armoire_wandOfHearts'),
+  },
+  forestFungusStaff: {
+    int: 8,
+    per: 9,
+  },
+  festivalFirecracker: {
+    per: 8,
+    set: 'festivalAttire',
+  },
+  merchantsDisplayTray: {
+    int: 10,
+    set: 'merchant',
+  },
+  battleAxe: {
+    int: 6,
+    con: 8,
+  },
+  hoofClippers: {
+    con: 6,
+    int: 6,
+    str: 6,
+    set: 'farrier',
+  },
+  weaversComb: {
+    per: 8,
+    str: 9,
+    set: 'weaver',
+  },
+  lamplighter: {
+    per: 6,
+    con: 8,
+    set: 'lamplighter',
+  },
+  coachDriversWhip: {
+    str: 6,
+    int: 8,
+    set: 'coachDriver',
+  },
+  scepterOfDiamonds: {
+    str: 13,
+    set: 'kingOfDiamonds',
+  },
+  flutteryArmy: {
+    con: 5,
+    int: 5,
+    str: 5,
+    set: 'fluttery',
+  },
+  cobblersHammer: {
+    con: 7,
+    str: 7,
+    set: 'cobbler',
+  },
+  glassblowersBlowpipe: {
+    str: 6,
+    set: 'glassblower',
+  },
+  poisonedGoblet: {
+    int: 7,
+    set: 'piraticalPrincess',
+  },
+  jeweledArcherBow: {
+    twoHanded: true,
+    int: 15,
+    set: 'jeweledArcher',
+  },
+  needleOfBookbinding: {
+    str: 8,
+    set: 'bookbinder',
+  },
+  spearOfSpades: {
+    con: 13,
+    set: 'aceOfSpades',
+  },
+  arcaneScroll: {
+    int: 9,
+    set: 'scribe',
+  },
+  chefsSpoon: {
+    int: 8,
+    set: 'chef',
+  },
+  vernalTaper: {
+    con: 8,
+    set: 'vernalVestments',
+  },
+  jugglingBalls: {
+    int: 10,
+  },
+  slingshot: {
+    str: 10,
+  },
+  nephriteBow: {
+    int: 7,
+    str: 6,
+    set: 'nephrite',
+    twoHanded: true,
+  },
+  bambooCane: {
+    int: 6,
+    per: 6,
+    con: 6,
+    set: 'boating',
+  },
+  astronomersTelescope: {
+    per: 10,
+    set: 'astronomer',
+  },
+  magnifyingGlass: {
+    per: 7,
+    set: 'detective',
+  },
+  floridFan: {
+    con: 9,
+  },
+  resplendentRapier: {
+    per: 9,
+  },
+  shadowMastersMace: {
+    per: 12,
+    set: 'shadowMaster',
+  },
+  alchemistsDistiller: {
+    str: 8,
+    int: 5,
+    set: 'alchemist',
+  },
+  happyBanner: {
+    per: 7,
+    set: 'birthday',
+  },
+  livelyMatch: {
+    str: 15,
+    set: 'matchMaker',
+  },
+  baseballBat: {
+    con: 9,
+    set: 'baseball',
+  },
+  paperCutter: {
+    str: 9,
+    set: 'paperKnight',
+  },
+  fiddlersBow: {
+    str: 6,
+    set: 'fiddler',
+  },
+  beachFlag: {
+    per: 12,
+    set: 'lifeguard',
+  },
+  handyHook: {
+    str: 8,
+    set: 'pirate',
+  },
+  guardiansCrook: {
+    str: 10,
+    set: 'grazerGuardian',
+  },
+  enchantersStaff: {
+    per: 12,
+    set: 'autumnEnchanter',
+  },
+  clubOfClubs: {
+    str: 10,
+    set: 'jackOfClubs',
+  },
+  eveningTea: {
+    int: 12,
+    set: 'dressingGown',
+  },
+  blueMoonSai: {
+    str: 8,
+    set: 'blueMoon',
+  },
+  jadeGlaive: {
+    str: 10,
+    set: 'jadeWarrior',
   },
 };
 
-let armoireSet = {
+forEach({
   armor,
+  body,
+  eyewear,
+  head,
+  headAccessory,
+  shield,
+  weapon,
+}, (set, setKey) => {
+  forEach(set, (gearItem, gearKey) => {
+    const gearStats = {};
+    const gearStatValues = [];
+    let notes;
+    if (!gearItem.notes) {
+      forEach(ATTRIBUTES, stat => {
+        if (gearItem[stat]) {
+          gearStats[stat] = gearItem[stat];
+          gearStatValues.push(gearItem[stat]);
+        }
+      });
+    }
+    if (gearStatValues.length > 0) {
+      if (gearStatValues.length === 1
+        || find(gearStats, gearStat => gearStat !== gearStatValues[0])
+      ) {
+        notes = t(`${setKey}Armoire${upperFirst(gearKey)}Notes`, gearStats);
+      } else {
+        notes = t(`${setKey}Armoire${upperFirst(gearKey)}Notes`, { attrs: gearStatValues[0] });
+      }
+    } else {
+      notes = t(`${setKey}Armoire${upperFirst(gearKey)}Notes`);
+    }
+    defaults(gearItem, {
+      canOwn: ownsItem(`${setKey}_armoire_${gearKey}`),
+      notes,
+      text: t(`${setKey}Armoire${upperFirst(gearKey)}Text`),
+      value: 100,
+    });
+  });
+});
+
+export {
+  armor,
+  body,
   eyewear,
   head,
   headAccessory,
   shield,
   weapon,
 };
-
-module.exports = armoireSet;

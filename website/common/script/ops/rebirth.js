@@ -1,25 +1,29 @@
+import each from 'lodash/each';
 import i18n from '../i18n';
-import _ from 'lodash';
 import { capByLevel } from '../statHelpers';
 import { MAX_LEVEL } from '../constants';
 import {
   NotAuthorized,
 } from '../libs/errors';
 import equip from './equip';
+import { removePinnedGearByClass } from './pinnedGearUtils';
+import isFreeRebirth from '../libs/isFreeRebirth';
 
 const USERSTATSLIST = ['per', 'int', 'con', 'str', 'points', 'gp', 'exp', 'mp'];
 
-module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
-  if (user.balance < 1.5 && user.stats.lvl < MAX_LEVEL) {
+export default function rebirth (user, tasks = [], req = {}, analytics) {
+  const notFree = !isFreeRebirth(user);
+
+  if (user.balance < 1.5 && notFree) {
     throw new NotAuthorized(i18n.t('notEnoughGems', req.language));
   }
 
-  let analyticsData = {
+  const analyticsData = {
     uuid: user._id,
     category: 'behavior',
   };
 
-  if (user.stats.lvl < MAX_LEVEL) {
+  if (notFree) {
     user.balance -= 1.5;
     analyticsData.acquireMethod = 'Gems';
     analyticsData.gemCost = 6;
@@ -33,9 +37,9 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
     analytics.track('Rebirth', analyticsData);
   }
 
-  let lvl = capByLevel(user.stats.lvl);
+  const lvl = capByLevel(user.stats.lvl);
 
-  _.each(tasks, function resetTasks (task) {
+  each(tasks, task => {
     if (!task.challenge || !task.challenge.id || task.challenge.broken) {
       if (task.type !== 'reward') {
         task.value = 0;
@@ -43,10 +47,16 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
       if (task.type === 'daily') {
         task.streak = 0;
       }
+      if (task.type === 'habit') {
+        task.counterDown = 0;
+        task.counterUp = 0;
+      }
     }
   });
 
-  let stats = user.stats;
+  removePinnedGearByClass(user);
+
+  const { stats } = user;
   stats.buffs = {};
   stats.hp = 50;
   stats.lvl = 1;
@@ -54,7 +64,7 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
 
   user.preferences.automaticAllocation = false;
 
-  _.each(USERSTATSLIST, function resetStats (value) {
+  each(USERSTATSLIST, value => {
     stats[value] = 0;
   });
 
@@ -76,29 +86,31 @@ module.exports = function rebirth (user, tasks = [], req = {}, analytics) {
     });
   }
 
-  let flags = user.flags;
-  if (!user.achievements.beastMaster) {
-    flags.rebirthEnabled = false;
-  }
+  const { flags } = user;
   flags.itemsEnabled = false;
   flags.dropsEnabled = false;
   flags.classSelected = false;
+  flags.rebirthEnabled = false;
   flags.levelDrops = {};
 
   if (!user.achievements.rebirths) {
     user.achievements.rebirths = 1;
     user.achievements.rebirthLevel = lvl;
   } else if (lvl > user.achievements.rebirthLevel || lvl === MAX_LEVEL) {
-    user.achievements.rebirths++;
+    user.achievements.rebirths += 1;
     user.achievements.rebirthLevel = lvl;
   }
 
-  user.addNotification('REBIRTH_ACHIEVEMENT');
+  if (!notFree) {
+    user.flags.lastFreeRebirth = new Date();
+  }
+
+  if (user.addNotification) user.addNotification('REBIRTH_ACHIEVEMENT');
 
   user.stats.buffs = {};
 
   return [
-    {user, tasks},
+    { user, tasks },
     i18n.t('rebirthComplete'),
   ];
-};
+}

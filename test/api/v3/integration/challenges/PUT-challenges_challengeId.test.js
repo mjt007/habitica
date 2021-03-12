@@ -3,13 +3,14 @@ import {
   generateChallenge,
   createAndPopulateGroup,
   translate as t,
-} from '../../../../helpers/api-v3-integration.helper';
+} from '../../../../helpers/api-integration/v3';
 
 describe('PUT /challenges/:challengeId', () => {
-  let privateGuild, user, nonMember, challenge, member;
+  let privateGuild; let user; let nonMember; let challenge; let
+    member;
 
   beforeEach(async () => {
-    let { group, groupLeader, members } = await createAndPopulateGroup({
+    const { group, groupLeader, members } = await createAndPopulateGroup({
       groupDetails: {
         name: 'TestPrivateGuild',
         type: 'guild',
@@ -22,9 +23,10 @@ describe('PUT /challenges/:challengeId', () => {
     user = groupLeader;
 
     nonMember = await generateUser();
-    member = members[0];
+    member = members[0]; // eslint-disable-line prefer-destructuring
 
     challenge = await generateChallenge(user, group);
+    await user.post(`/challenges/${challenge._id}/join`);
     await member.post(`/challenges/${challenge._id}/join`);
   });
 
@@ -47,7 +49,7 @@ describe('PUT /challenges/:challengeId', () => {
   });
 
   it('only updates allowed fields', async () => {
-    let res = await user.put(`/challenges/${challenge._id}`, {
+    const res = await user.put(`/challenges/${challenge._id}`, {
       // ignored
       prize: 33,
       group: 'blabla',
@@ -55,11 +57,11 @@ describe('PUT /challenges/:challengeId', () => {
       tasksOrder: 'new order',
       official: true,
       shortName: 'new short name',
+      leader: member._id,
 
       // applied
       name: 'New Challenge Name',
       description: 'New challenge description.',
-      leader: member._id,
     });
 
     expect(res.prize).to.equal(0);
@@ -75,9 +77,17 @@ describe('PUT /challenges/:challengeId', () => {
     expect(res.shortName).not.to.equal('new short name');
 
     expect(res.leader).to.eql({
-      _id: member._id,
-      id: member._id,
-      profile: {name: member.profile.name},
+      _id: user._id,
+      id: user._id,
+      profile: { name: user.profile.name },
+      auth: {
+        local: {
+          username: user.auth.local.username,
+        },
+      },
+      flags: {
+        verifiedUsername: true,
+      },
     });
     expect(res.name).to.equal('New Challenge Name');
     expect(res.description).to.equal('New challenge description.');

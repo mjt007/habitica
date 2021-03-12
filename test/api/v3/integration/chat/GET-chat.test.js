@@ -2,7 +2,7 @@ import {
   generateUser,
   generateGroup,
   translate as t,
-} from '../../../../helpers/api-v3-integration.helper';
+} from '../../../../helpers/api-integration/v3';
 
 describe('GET /groups/:groupId/chat', () => {
   let user;
@@ -15,7 +15,7 @@ describe('GET /groups/:groupId/chat', () => {
     let group;
 
     before(async () => {
-      let leader = await generateUser({balance: 2});
+      const leader = await generateUser({ balance: 2 });
 
       group = await generateGroup(leader, {
         name: 'test group',
@@ -23,16 +23,17 @@ describe('GET /groups/:groupId/chat', () => {
         privacy: 'public',
       }, {
         chat: [
-          {text: 'Hello', flags: {}},
-          {text: 'Welcome to the Guild', flags: {}},
+          { text: 'Hello', flags: {}, id: 1 },
+          { text: 'Welcome to the Guild', flags: {}, id: 2 },
         ],
       });
     });
 
     it('returns Guild chat', async () => {
-      let chat = await user.get(`/groups/${group._id}/chat`);
+      const chat = await user.get(`/groups/${group._id}/chat`);
 
-      expect(chat).to.eql(group.chat);
+      expect(chat[0].id).to.eql(group.chat[0].id);
+      expect(chat[1].id).to.eql(group.chat[1].id);
     });
   });
 
@@ -40,7 +41,7 @@ describe('GET /groups/:groupId/chat', () => {
     let group;
 
     before(async () => {
-      let leader = await generateUser({balance: 2});
+      const leader = await generateUser({ balance: 2 });
 
       group = await generateGroup(leader, {
         name: 'test group',

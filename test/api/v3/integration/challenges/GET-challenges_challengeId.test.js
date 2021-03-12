@@ -1,14 +1,14 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
   createAndPopulateGroup,
   generateChallenge,
   translate as t,
-} from '../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
+} from '../../../../helpers/api-integration/v3';
 
 describe('GET /challenges/:challengeId', () => {
   it('fails if challenge doesn\'t exists', async () => {
-    let user = await generateUser();
+    const user = await generateUser();
     await expect(user.get(`/challenges/${generateUUID()}`)).to.eventually.be.rejected.and.eql({
       code: 404,
       error: 'NotFound',
@@ -25,18 +25,20 @@ describe('GET /challenges/:challengeId', () => {
     beforeEach(async () => {
       user = await generateUser();
 
-      let populatedGroup = await createAndPopulateGroup({
-        groupDetails: {type: 'guild', privacy: 'public'},
+      const populatedGroup = await createAndPopulateGroup({
+        groupDetails: { type: 'guild', privacy: 'public' },
       });
 
       groupLeader = populatedGroup.groupLeader;
       group = populatedGroup.group;
 
       challenge = await generateChallenge(groupLeader, group);
+      await groupLeader.post(`/challenges/${challenge._id}/join`);
     });
 
     it('should return challenge data', async () => {
-      let chal = await user.get(`/challenges/${challenge._id}`);
+      await challenge.sync();
+      const chal = await user.get(`/challenges/${challenge._id}`);
       expect(chal.memberCount).to.equal(challenge.memberCount);
       expect(chal.name).to.equal(challenge.name);
       expect(chal._id).to.equal(challenge._id);
@@ -44,12 +46,22 @@ describe('GET /challenges/:challengeId', () => {
       expect(chal.leader).to.eql({
         _id: groupLeader._id,
         id: groupLeader._id,
-        profile: {name: groupLeader.profile.name},
+        profile: { name: groupLeader.profile.name },
+        auth: {
+          local: {
+            username: groupLeader.auth.local.username,
+          },
+        },
+        flags: {
+          verifiedUsername: true,
+        },
       });
       expect(chal.group).to.eql({
         _id: group._id,
+        categories: [],
         id: group.id,
         name: group.name,
+        summary: group.name,
         type: group.type,
         privacy: group.privacy,
         leader: groupLeader.id,
@@ -59,104 +71,180 @@ describe('GET /challenges/:challengeId', () => {
 
   context('private guild', () => {
     let groupLeader;
+    let challengeLeader;
     let group;
     let challenge;
     let members;
-    let user;
+    let nonMember;
+    let otherMember;
 
     beforeEach(async () => {
-      user = await generateUser();
+      nonMember = await generateUser();
 
-      let populatedGroup = await createAndPopulateGroup({
-        groupDetails: {type: 'guild', privacy: 'private'},
-        members: 1,
+      const populatedGroup = await createAndPopulateGroup({
+        groupDetails: { type: 'guild', privacy: 'private' },
+        members: 2,
       });
 
       groupLeader = populatedGroup.groupLeader;
       group = populatedGroup.group;
       members = populatedGroup.members;
 
-      challenge = await generateChallenge(groupLeader, group);
-      await members[0].post(`/challenges/${challenge._id}/join`);
+      challengeLeader = members[0]; // eslint-disable-line prefer-destructuring
+      otherMember = members[1]; // eslint-disable-line prefer-destructuring
+
+      challenge = await generateChallenge(challengeLeader, group);
     });
 
-    it('fails if user doesn\'t have access to the challenge', async () => {
-      await expect(user.get(`/challenges/${challenge._id}`)).to.eventually.be.rejected.and.eql({
+    it('fails if user isn\'t in the guild and isn\'t challenge leader', async () => {
+      await expect(nonMember.get(`/challenges/${challenge._id}`)).to.eventually.be.rejected.and.eql({
         code: 404,
         error: 'NotFound',
         message: t('challengeNotFound'),
       });
     });
 
-    it('should return challenge data', async () => {
-      let chal = await members[0].get(`/challenges/${challenge._id}`);
+    it('returns challenge data for any user in the guild', async () => {
+      const chal = await otherMember.get(`/challenges/${challenge._id}`);
       expect(chal.name).to.equal(challenge.name);
       expect(chal._id).to.equal(challenge._id);
 
       expect(chal.leader).to.eql({
-        _id: groupLeader._id,
-        id: groupLeader._id,
-        profile: {name: groupLeader.profile.name},
+        _id: challengeLeader._id,
+        id: challengeLeader._id,
+        profile: { name: challengeLeader.profile.name },
+        auth: {
+          local: {
+            username: challengeLeader.auth.local.username,
+          },
+        },
+        flags: {
+          verifiedUsername: true,
+        },
       });
       expect(chal.group).to.eql({
         _id: group._id,
+        categories: [],
         id: group.id,
         name: group.name,
+        summary: group.name,
         type: group.type,
         privacy: group.privacy,
         leader: groupLeader.id,
+      });
+    });
+
+    it('returns challenge data if challenge leader isn\'t in the guild or challenge', async () => {
+      await challengeLeader.post(`/groups/${group._id}/leave`);
+      await challengeLeader.sync();
+      expect(challengeLeader.guilds).to.be.empty; // check that leaving worked
+
+      const chal = await challengeLeader.get(`/challenges/${challenge._id}`);
+      expect(chal.name).to.equal(challenge.name);
+      expect(chal._id).to.equal(challenge._id);
+
+      expect(chal.leader).to.eql({
+        _id: challengeLeader._id,
+        id: challengeLeader._id,
+        profile: { name: challengeLeader.profile.name },
+        auth: {
+          local: {
+            username: challengeLeader.auth.local.username,
+          },
+        },
+        flags: {
+          verifiedUsername: true,
+        },
       });
     });
   });
 
   context('party', () => {
     let groupLeader;
+    let challengeLeader;
     let group;
     let challenge;
     let members;
-    let user;
+    let nonMember;
+    let otherMember;
 
     beforeEach(async () => {
-      user = await generateUser();
+      nonMember = await generateUser();
 
-      let populatedGroup = await createAndPopulateGroup({
-        groupDetails: {type: 'party'},
-        members: 1,
+      const populatedGroup = await createAndPopulateGroup({
+        groupDetails: { type: 'party', privacy: 'private' },
+        members: 2,
       });
 
       groupLeader = populatedGroup.groupLeader;
       group = populatedGroup.group;
       members = populatedGroup.members;
 
-      challenge = await generateChallenge(groupLeader, group);
-      await members[0].post(`/challenges/${challenge._id}/join`);
+      challengeLeader = members[0]; // eslint-disable-line prefer-destructuring
+      otherMember = members[1]; // eslint-disable-line prefer-destructuring
+
+      challenge = await generateChallenge(challengeLeader, group);
     });
 
-    it('fails if user doesn\'t have access to the challenge', async () => {
-      await expect(user.get(`/challenges/${challenge._id}`)).to.eventually.be.rejected.and.eql({
+    it('fails if user isn\'t in the party and isn\'t challenge leader', async () => {
+      await expect(nonMember.get(`/challenges/${challenge._id}`)).to.eventually.be.rejected.and.eql({
         code: 404,
         error: 'NotFound',
         message: t('challengeNotFound'),
       });
     });
 
-    it('should return challenge data', async () => {
-      let chal = await members[0].get(`/challenges/${challenge._id}`);
+    it('returns challenge data for any user in the party', async () => {
+      const chal = await otherMember.get(`/challenges/${challenge._id}`);
       expect(chal.name).to.equal(challenge.name);
       expect(chal._id).to.equal(challenge._id);
 
       expect(chal.leader).to.eql({
-        _id: groupLeader._id,
-        id: groupLeader.id,
-        profile: {name: groupLeader.profile.name},
+        _id: challengeLeader._id,
+        id: challengeLeader._id,
+        profile: { name: challengeLeader.profile.name },
+        auth: {
+          local: {
+            username: challengeLeader.auth.local.username,
+          },
+        },
+        flags: {
+          verifiedUsername: true,
+        },
       });
       expect(chal.group).to.eql({
         _id: group._id,
-        id: group.id,
+        id: group._id,
+        categories: [],
         name: group.name,
+        summary: group.name,
         type: group.type,
         privacy: group.privacy,
         leader: groupLeader.id,
+      });
+    });
+
+    it('returns challenge data if challenge leader isn\'t in the party or challenge', async () => {
+      await challengeLeader.post('/groups/party/leave');
+      await challengeLeader.sync();
+      expect(challengeLeader.party._id).to.be.undefined; // check that leaving worked
+
+      const chal = await challengeLeader.get(`/challenges/${challenge._id}`);
+      expect(chal.name).to.equal(challenge.name);
+      expect(chal._id).to.equal(challenge._id);
+
+      expect(chal.leader).to.eql({
+        _id: challengeLeader._id,
+        id: challengeLeader._id,
+        profile: { name: challengeLeader.profile.name },
+        auth: {
+          local: {
+            username: challengeLeader.auth.local.username,
+          },
+        },
+        flags: {
+          verifiedUsername: true,
+        },
       });
     });
   });

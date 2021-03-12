@@ -1,13 +1,15 @@
 // An utility to pick deep properties from an object.
 // Works like _.pick but supports nested props (ie pickDeep(obj, ['deep.property']))
 
-import _ from 'lodash';
+import each from 'lodash/each';
+import set from 'lodash/set';
+import get from 'lodash/get';
 
-module.exports = function pickDeep (obj, properties) {
-  if (!_.isArray(properties)) throw new Error('"properties" must be an array');
+export default function pickDeep (obj, properties) {
+  if (!Array.isArray(properties)) throw new Error('"properties" must be an array');
 
-  let result = {};
-  _.each(properties, (prop) => _.set(result, prop, _.get(obj, prop)));
+  const result = {};
+  each(properties, prop => set(result, prop, get(obj, prop)));
 
   return result;
-};
+}

@@ -1,4 +1,5 @@
 import randomDrop from '../../../website/common/script/fns/randomDrop';
+import i18n from '../../../website/common/script/i18n';
 import {
   generateUser,
   generateTodo,
@@ -15,6 +16,9 @@ describe('common.fns.randomDrop', () => {
   beforeEach(() => {
     user = generateUser();
     user._tmp = user._tmp ? user._tmp : {};
+    user.items.eggs.Wolf = 0;
+    user.items.food.Meat = 0;
+    user._id = `a${user._id.slice(1)}`;
     task = generateTodo({ userId: user._id });
     predictableRandom = sandbox.stub().returns(0.5);
   });
@@ -34,8 +38,15 @@ describe('common.fns.randomDrop', () => {
 
   context('drops enabled', () => {
     beforeEach(() => {
-      user.flags.dropsEnabled = true;
       task.priority = 100000;
+    });
+
+    it('awards an egg and a hatching potion if user has never received any', () => {
+      delete user.items.eggs.Wolf;
+      randomDrop(user, { task, predictableRandom });
+
+      expect(user._tmp.firstDrops.egg).to.be.a.string;
+      expect(user._tmp.firstDrops.hatchingPotion).to.be.a.string;
     });
 
     it('does nothing if user.items.lastDrop.count is exceeded', () => {
@@ -46,7 +57,6 @@ describe('common.fns.randomDrop', () => {
 
     it('drops something when the task is a todo', () => {
       expect(user._tmp).to.eql({});
-      user.flags.dropsEnabled = true;
       predictableRandom.returns(0.1);
 
       randomDrop(user, { task, predictableRandom });
@@ -56,7 +66,6 @@ describe('common.fns.randomDrop', () => {
     it('drops something when the task is a habit', () => {
       task = generateHabit({ userId: user._id });
       expect(user._tmp).to.eql({});
-      user.flags.dropsEnabled = true;
       predictableRandom.returns(0.1);
 
       randomDrop(user, { task, predictableRandom });
@@ -66,7 +75,6 @@ describe('common.fns.randomDrop', () => {
     it('drops something when the task is a daily', () => {
       task = generateDaily({ userId: user._id });
       expect(user._tmp).to.eql({});
-      user.flags.dropsEnabled = true;
       predictableRandom.returns(0.1);
 
       randomDrop(user, { task, predictableRandom });
@@ -76,7 +84,6 @@ describe('common.fns.randomDrop', () => {
     it('drops something when the task is a reward', () => {
       task = generateReward({ userId: user._id });
       expect(user._tmp).to.eql({});
-      user.flags.dropsEnabled = true;
       predictableRandom.returns(0.1);
 
       randomDrop(user, { task, predictableRandom });
@@ -113,8 +120,9 @@ describe('common.fns.randomDrop', () => {
         randomDrop(user, { task, predictableRandom });
         expect(user._tmp.drop.type).to.eql('HatchingPotion');
         expect(user._tmp.drop.value).to.eql(4);
-        let acceptableDrops = ['Zombie', 'CottonCandyPink', 'CottonCandyBlue'];
-        expect(acceptableDrops).to.contain(user._tmp.drop.key); // deterministically 'CottonCandyBlue'
+        const acceptableDrops = ['Zombie', 'CottonCandyPink', 'CottonCandyBlue'];
+        // deterministically 'CottonCandyBlue'
+        expect(acceptableDrops).to.contain(user._tmp.drop.key);
       });
 
       it('drops an uncommon potion', () => {
@@ -123,7 +131,7 @@ describe('common.fns.randomDrop', () => {
         randomDrop(user, { task, predictableRandom });
         expect(user._tmp.drop.type).to.eql('HatchingPotion');
         expect(user._tmp.drop.value).to.eql(3);
-        let acceptableDrops = ['Red', 'Shade', 'Skeleton'];
+        const acceptableDrops = ['Red', 'Shade', 'Skeleton'];
         expect(acceptableDrops).to.contain(user._tmp.drop.key); // always skeleton
       });
 
@@ -133,8 +141,151 @@ describe('common.fns.randomDrop', () => {
         randomDrop(user, { task, predictableRandom });
         expect(user._tmp.drop.type).to.eql('HatchingPotion');
         expect(user._tmp.drop.value).to.eql(2);
-        let acceptableDrops = ['Base', 'White', 'Desert'];
+        const acceptableDrops = ['Base', 'White', 'Desert'];
         expect(acceptableDrops).to.contain(user._tmp.drop.key); // always Desert
+      });
+    });
+
+    context('drop cap notification', () => {
+      let analytics;
+      const req = {};
+      let isSubscribedStub;
+
+      beforeEach(() => {
+        user.addNotification = () => {};
+        sandbox.stub(user, 'addNotification');
+        user.isSubscribed = () => {};
+        isSubscribedStub = sandbox.stub(user, 'isSubscribed');
+        isSubscribedStub.returns(false);
+        analytics = { track () {} };
+        sandbox.stub(analytics, 'track');
+      });
+
+      it('sends a notification if A/B test is enabled when drop cap is reached', () => {
+        user._ABtests.dropCapNotif = 'drop-cap-notif-enabled';
+        predictableRandom.returns(0.1);
+
+        // Max Drop Count is 5
+        expect(user.items.lastDrop.count).to.equal(0);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        expect(user.items.lastDrop.count).to.equal(5);
+        expect(user.addNotification).to.be.calledOnce;
+        expect(user.addNotification).to.be.calledWith('DROP_CAP_REACHED', {
+          message: i18n.t('dropCapReached'),
+          items: 5,
+        });
+      });
+
+      it('does not send a notification if user is enrolled in disabled A/B test group', () => {
+        user._ABtests.dropCapNotif = 'drop-cap-notif-disabled';
+        predictableRandom.returns(0.1);
+
+        // Max Drop Count is 5
+        expect(user.items.lastDrop.count).to.equal(0);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        expect(user.items.lastDrop.count).to.equal(5);
+        expect(user.addNotification).to.not.be.called;
+      });
+
+      it('does not send a notification if user is enrolled in disabled A/B test group', () => {
+        user._ABtests.dropCapNotif = 'drop-cap-notif-not-enrolled';
+        predictableRandom.returns(0.1);
+
+        // Max Drop Count is 5
+        expect(user.items.lastDrop.count).to.equal(0);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        expect(user.items.lastDrop.count).to.equal(5);
+        expect(user.addNotification).to.not.be.called;
+      });
+
+      it('does not send a notification if drop cap is not reached', () => {
+        user._ABtests.dropCapNotif = 'drop-cap-notif-enabled';
+        predictableRandom.returns(0.1);
+
+        // Max Drop Count is 5
+        expect(user.items.lastDrop.count).to.equal(0);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        expect(user.items.lastDrop.count).to.equal(4);
+        expect(user.addNotification).to.not.be.called;
+      });
+
+      it('does not send a notification if user is subscribed', () => {
+        user._ABtests.dropCapNotif = 'drop-cap-notif-enabled';
+        predictableRandom.returns(0.1);
+        isSubscribedStub.returns(true);
+
+        // Max Drop Count is 5
+        expect(user.items.lastDrop.count).to.equal(0);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        expect(user.items.lastDrop.count).to.equal(5);
+        expect(user.addNotification).to.not.be.called;
+      });
+
+      it('tracks drop cap reached event for enrolled users (notification enabled)', () => {
+        user._ABtests.dropCapNotif = 'drop-cap-notif-enabled';
+        predictableRandom.returns(0.1);
+        isSubscribedStub.returns(true);
+
+        // Max Drop Count is 5
+        expect(user.items.lastDrop.count).to.equal(0);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        expect(user.items.lastDrop.count).to.equal(5);
+        expect(analytics.track).to.be.calledWith('drop cap reached');
+      });
+
+      it('tracks drop cap reached event for enrolled users (notification disabled)', () => {
+        user._ABtests.dropCapNotif = 'drop-cap-notif-disabled';
+        predictableRandom.returns(0.1);
+        isSubscribedStub.returns(true);
+
+        // Max Drop Count is 5
+        expect(user.items.lastDrop.count).to.equal(0);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        expect(user.items.lastDrop.count).to.equal(5);
+        expect(analytics.track).to.be.calledWith('drop cap reached');
+      });
+
+      it('does not track drop cap reached event for users not enrolled in A/B test', () => {
+        user._ABtests.dropCapNotif = 'drop-cap-notif-not-enrolled';
+        predictableRandom.returns(0.1);
+        isSubscribedStub.returns(true);
+
+        // Max Drop Count is 5
+        expect(user.items.lastDrop.count).to.equal(0);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        randomDrop(user, { task, predictableRandom }, req, analytics);
+        expect(user.items.lastDrop.count).to.equal(5);
+        expect(analytics.track).to.not.be.calledWith('drop cap reached');
       });
     });
   });

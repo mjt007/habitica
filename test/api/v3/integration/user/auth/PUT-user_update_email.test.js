@@ -1,7 +1,8 @@
+import nconf from 'nconf';
 import {
   generateUser,
   translate as t,
-} from '../../../../../helpers/api-v3-integration.helper';
+} from '../../../../../helpers/api-integration/v3';
 import {
   bcryptCompare,
   sha1MakeSalt,
@@ -11,10 +12,10 @@ import {
 const ENDPOINT = '/user/auth/update-email';
 
 describe('PUT /user/auth/update-email', () => {
-  let newEmail = 'some-new-email_2@example.net';
-  let oldPassword = 'password'; // from habitrpg/test/helpers/api-integration/v3/object-generators.js
+  const newEmail = 'SOmE-nEw-emAIl_2@example.net';
+  const oldPassword = 'password'; // from habitrpg/test/helpers/api-integration/v3/object-generators.js
 
-  context('Local Authenticaion User', async () => {
+  context('Local Authentication User', async () => {
     let user;
 
     beforeEach(async () => {
@@ -51,14 +52,15 @@ describe('PUT /user/auth/update-email', () => {
     });
 
     it('changes email if new email and existing password are provided', async () => {
-      let response = await user.put(ENDPOINT, {
+      const lowerCaseNewEmail = newEmail.toLowerCase();
+      const response = await user.put(ENDPOINT, {
         newEmail,
         password: oldPassword,
       });
-      expect(response).to.eql({ email: 'some-new-email_2@example.net' });
+      expect(response.email).to.eql(lowerCaseNewEmail);
 
       await user.sync();
-      expect(user.auth.local.email).to.eql(newEmail);
+      expect(user.auth.local.email).to.eql(lowerCaseNewEmail);
     });
 
     it('rejects if email is already taken', async () => {
@@ -68,15 +70,15 @@ describe('PUT /user/auth/update-email', () => {
       })).to.eventually.be.rejected.and.eql({
         code: 401,
         error: 'NotAuthorized',
-        message: t('cannotFulfillReq'),
+        message: t('cannotFulfillReq', { techAssistanceEmail: nconf.get('EMAILS_TECH_ASSISTANCE_EMAIL') }),
       });
     });
 
     it('converts user with SHA1 encrypted password to bcrypt encryption', async () => {
-      let textPassword = 'mySecretPassword';
-      let salt = sha1MakeSalt();
-      let sha1HashedPassword = sha1EncryptPassword(textPassword, salt);
-      let myNewEmail = 'my-new-random-email@example.net';
+      const textPassword = 'mySecretPassword';
+      const salt = sha1MakeSalt();
+      const sha1HashedPassword = sha1EncryptPassword(textPassword, salt);
+      const myNewEmail = 'my-new-random-email@example.net';
 
       await user.update({
         'auth.local.hashed_password': sha1HashedPassword,
@@ -90,7 +92,7 @@ describe('PUT /user/auth/update-email', () => {
       expect(user.auth.local.hashed_password).to.equal(sha1HashedPassword);
 
       // update email
-      let response = await user.put(ENDPOINT, {
+      const response = await user.put(ENDPOINT, {
         newEmail: myNewEmail,
         password: textPassword,
       });
@@ -103,7 +105,7 @@ describe('PUT /user/auth/update-email', () => {
       expect(user.auth.local.salt).to.be.undefined;
       expect(user.auth.local.hashed_password).not.to.equal(sha1HashedPassword);
 
-      let isValidPassword = await bcryptCompare(textPassword, user.auth.local.hashed_password);
+      const isValidPassword = await bcryptCompare(textPassword, user.auth.local.hashed_password);
       expect(isValidPassword).to.equal(true);
     });
   });

@@ -1,12 +1,12 @@
 import {
   generateUser,
-  translate as t,
 } from '../../../../../helpers/api-integration/v3';
-import paypalPayments from '../../../../../../website/server/libs/paypalPayments';
+import paypalPayments from '../../../../../../website/server/libs/payments/paypal';
 import shared from '../../../../../../website/common';
+import apiError from '../../../../../../website/server/libs/apiError';
 
 describe('payments : paypal #subscribe', () => {
-  let endpoint = '/paypal/subscribe';
+  const endpoint = '/paypal/subscribe';
   let user;
 
   beforeEach(async () => {
@@ -17,7 +17,7 @@ describe('payments : paypal #subscribe', () => {
     await expect(user.get(endpoint)).to.eventually.be.rejected.and.eql({
       code: 400,
       error: 'BadRequest',
-      message: t('missingSubKey'),
+      message: apiError('missingSubKey'),
     });
   });
 
@@ -25,7 +25,7 @@ describe('payments : paypal #subscribe', () => {
     let subscribeStub;
 
     beforeEach(async () => {
-      subscribeStub = sinon.stub(paypalPayments, 'subscribe').returnsPromise().resolves('/');
+      subscribeStub = sinon.stub(paypalPayments, 'subscribe').resolves('/');
     });
 
     afterEach(() => {
@@ -33,8 +33,8 @@ describe('payments : paypal #subscribe', () => {
     });
 
     it('makes a purchase', async () => {
-      let subKey = 'basic_3mo';
-      let sub = shared.content.subscriptionBlocks[subKey];
+      const subKey = 'basic_3mo';
+      const sub = shared.content.subscriptionBlocks[subKey];
 
       user = await generateUser({
         'profile.name': 'sender',
@@ -44,7 +44,7 @@ describe('payments : paypal #subscribe', () => {
         balance: 2,
       });
 
-      await user.get(`${endpoint}?sub=${subKey}`);
+      await user.get(`${endpoint}?sub=${subKey}&noRedirect=true`);
 
       expect(subscribeStub).to.be.calledOnce;
 

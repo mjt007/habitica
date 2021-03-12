@@ -1,9 +1,9 @@
+import { v4 as generateUUID } from 'uuid';
 import {
   createAndPopulateGroup,
   translate as t,
   generateUser,
-} from '../../../../helpers/api-v3-integration.helper';
-import { v4 as generateUUID } from 'uuid';
+} from '../../../../helpers/api-integration/v3';
 
 describe('POST /groups/:groupId/quests/leave', () => {
   let questingGroup;
@@ -14,7 +14,7 @@ describe('POST /groups/:groupId/quests/leave', () => {
   const PET_QUEST = 'whale';
 
   beforeEach(async () => {
-    let { group, groupLeader, members } = await createAndPopulateGroup({
+    const { group, groupLeader, members } = await createAndPopulateGroup({
       groupDetails: { type: 'party', privacy: 'private' },
       members: 2,
     });
@@ -41,24 +41,24 @@ describe('POST /groups/:groupId/quests/leave', () => {
 
     it('returns an error for a group in which user is not a member', async () => {
       await expect(user.post(`/groups/${questingGroup._id}/quests/leave`))
-      .to.eventually.be.rejected.and.eql({
-        code: 404,
-        error: 'NotFound',
-        message: t('groupNotFound'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 404,
+          error: 'NotFound',
+          message: t('groupNotFound'),
+        });
     });
 
     it('returns an error when group is a guild', async () => {
-      let { group: guild, groupLeader: guildLeader } = await createAndPopulateGroup({
+      const { group: guild, groupLeader: guildLeader } = await createAndPopulateGroup({
         groupDetails: { type: 'guild', privacy: 'private' },
       });
 
       await expect(guildLeader.post(`/groups/${guild._id}/quests/leave`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('guildQuestsNotSupported'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 401,
+          error: 'NotAuthorized',
+          message: t('guildQuestsNotSupported'),
+        });
     });
 
     it('returns an error when quest is not active', async () => {
@@ -89,11 +89,11 @@ describe('POST /groups/:groupId/quests/leave', () => {
       await partyMembers[1].post(`/groups/${questingGroup._id}/quests/reject`);
 
       await expect(partyMembers[1].post(`/groups/${questingGroup._id}/quests/leave`))
-      .to.eventually.be.rejected.and.eql({
-        code: 401,
-        error: 'NotAuthorized',
-        message: t('notPartOfQuest'),
-      });
+        .to.eventually.be.rejected.and.eql({
+          code: 401,
+          error: 'NotAuthorized',
+          message: t('notPartOfQuest'),
+        });
     });
   });
 
@@ -102,7 +102,7 @@ describe('POST /groups/:groupId/quests/leave', () => {
     await partyMembers[0].post(`/groups/${questingGroup._id}/quests/accept`);
     await partyMembers[1].post(`/groups/${questingGroup._id}/quests/accept`);
 
-    let leaveResult = await partyMembers[0].post(`/groups/${questingGroup._id}/quests/leave`);
+    const leaveResult = await partyMembers[0].post(`/groups/${questingGroup._id}/quests/leave`);
     await Promise.all([
       partyMembers[0].sync(),
       questingGroup.sync(),

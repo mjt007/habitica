@@ -2,14 +2,15 @@ import {
   generateUser,
   createAndPopulateGroup,
   translate as t,
-} from '../../../../helpers/api-v3-integration.helper';
+} from '../../../../helpers/api-integration/v3';
 
 describe('POST /group/:groupId/reject-invite', () => {
   context('Rejecting a public guild invite', () => {
-    let publicGuild, invitedUser;
+    let publicGuild; let
+      invitedUser;
 
     beforeEach(async () => {
-      let {group, invitees} = await createAndPopulateGroup({
+      const { group, invitees } = await createAndPopulateGroup({
         groupDetails: {
           name: 'Test Guild',
           type: 'guild',
@@ -19,11 +20,11 @@ describe('POST /group/:groupId/reject-invite', () => {
       });
 
       publicGuild = group;
-      invitedUser = invitees[0];
+      invitedUser = invitees[0]; // eslint-disable-line prefer-destructuring
     });
 
     it('returns error when user is not invited', async () => {
-      let userWithoutInvite = await generateUser();
+      const userWithoutInvite = await generateUser();
 
       await expect(userWithoutInvite.post(`/groups/${publicGuild._id}/reject-invite`)).to.eventually.be.rejected.and.eql({
         code: 401,
@@ -36,16 +37,17 @@ describe('POST /group/:groupId/reject-invite', () => {
       await invitedUser.post(`/groups/${publicGuild._id}/reject-invite`);
 
       await expect(invitedUser.get('/user'))
-        .to.eventually.have.deep.property('invitations.guilds')
-        .to.not.include({id: publicGuild._id});
+        .to.eventually.have.nested.property('invitations.guilds')
+        .to.not.include({ id: publicGuild._id });
     });
   });
 
   context('Rejecting a private guild invite', () => {
-    let invitedUser, guild;
+    let invitedUser; let
+      guild;
 
     beforeEach(async () => {
-      let { group, invitees } = await createAndPopulateGroup({
+      const { group, invitees } = await createAndPopulateGroup({
         groupDetails: {
           name: 'Test Guild',
           type: 'guild',
@@ -55,11 +57,11 @@ describe('POST /group/:groupId/reject-invite', () => {
       });
 
       guild = group;
-      invitedUser = invitees[0];
+      invitedUser = invitees[0]; // eslint-disable-line prefer-destructuring
     });
 
     it('returns error when user is not invited', async () => {
-      let userWithoutInvite = await generateUser();
+      const userWithoutInvite = await generateUser();
 
       await expect(userWithoutInvite.post(`/groups/${guild._id}/reject-invite`)).to.eventually.be.rejected.and.eql({
         code: 401,
@@ -72,16 +74,17 @@ describe('POST /group/:groupId/reject-invite', () => {
       await invitedUser.post(`/groups/${guild._id}/reject-invite`);
 
       await expect(invitedUser.get('/user'))
-        .to.eventually.have.deep.property('invitations.guilds')
-        .to.not.include({id: guild._id});
+        .to.eventually.have.nested.property('invitations.guilds')
+        .to.not.include({ id: guild._id });
     });
   });
 
   context('Rejecting a party invite', () => {
-    let invitedUser, party;
+    let invitedUser; let
+      party;
 
     beforeEach(async () => {
-      let { group, invitees } = await createAndPopulateGroup({
+      const { group, invitees } = await createAndPopulateGroup({
         groupDetails: {
           name: 'Test Party',
           type: 'party',
@@ -91,11 +94,11 @@ describe('POST /group/:groupId/reject-invite', () => {
       });
 
       party = group;
-      invitedUser = invitees[0];
+      invitedUser = invitees[0]; // eslint-disable-line prefer-destructuring
     });
 
     it('returns error when user is not invited', async () => {
-      let userWithoutInvite = await generateUser();
+      const userWithoutInvite = await generateUser();
 
       await expect(userWithoutInvite.post(`/groups/${party._id}/reject-invite`)).to.eventually.be.rejected.and.eql({
         code: 401,
@@ -107,7 +110,7 @@ describe('POST /group/:groupId/reject-invite', () => {
     it('clears invitation from user', async () => {
       await invitedUser.post(`/groups/${party._id}/reject-invite`);
 
-      await expect(invitedUser.get('/user')).to.eventually.not.have.deep.property('invitations.party.id');
+      await expect(invitedUser.get('/user')).to.eventually.not.have.nested.property('invitations.parties[0].id');
     });
   });
 });

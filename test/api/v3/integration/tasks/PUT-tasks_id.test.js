@@ -1,3 +1,5 @@
+import moment from 'moment';
+import { v4 as generateUUID } from 'uuid';
 import {
   generateUser,
   generateGroup,
@@ -5,13 +7,17 @@ import {
   generateChallenge,
   server,
 } from '../../../../helpers/api-integration/v3';
-import { v4 as generateUUID } from 'uuid';
 
 describe('PUT /tasks/:id', () => {
   let user;
+  let tzoffset;
+
+  before(async () => {
+    tzoffset = (new Date()).getTimezoneOffset();
+  });
 
   beforeEach(async () => {
-    user = await generateUser();
+    user = await generateUser({ 'preferences.timezoneOffset': tzoffset });
   });
 
   context('validates params', () => {
@@ -27,7 +33,7 @@ describe('PUT /tasks/:id', () => {
     it(`ignores setting _id, type, userId, history, createdAt,
                         updatedAt, challenge, completed, streak,
                         dateCompleted fields`, async () => {
-      let savedTask = await user.put(`/tasks/${task._id}`, {
+      const savedTask = await user.put(`/tasks/${task._id}`, {
         _id: 123,
         type: 'daily',
         userId: 123,
@@ -45,7 +51,7 @@ describe('PUT /tasks/:id', () => {
       expect(savedTask.userId).to.equal(task.userId);
       expect(savedTask.history).to.eql(task.history);
       expect(savedTask.createdAt).to.equal(task.createdAt);
-      expect(savedTask.updatedAt).to.be.greaterThan(task.updatedAt);
+      expect(new Date(savedTask.updatedAt)).to.be.greaterThan(new Date(task.updatedAt));
       expect(savedTask.challenge).to.eql(task.challenge);
       expect(savedTask.completed).to.eql(task.completed);
       expect(savedTask.streak).to.equal(savedTask.streak); // it's an habit, dailies can change it
@@ -53,7 +59,7 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('ignores invalid fields', async () => {
-      let savedTask = await  user.put(`/tasks/${task._id}`, {
+      const savedTask = await user.put(`/tasks/${task._id}`, {
         notValid: true,
       });
 
@@ -62,17 +68,18 @@ describe('PUT /tasks/:id', () => {
 
     it(`only allows setting streak, alias, reminders, checklist, notes, attribute, tags
         fields for challenge tasks owned by a user`, async () => {
-      let guild = await generateGroup(user);
-      let challenge = await generateChallenge(user, guild);
+      const guild = await generateGroup(user);
+      const challenge = await generateChallenge(user, guild);
+      await user.post(`/challenges/${challenge._id}/join`);
 
-      let challengeTask = await user.post(`/tasks/challenge/${challenge._id}`, {
+      const challengeTask = await user.post(`/tasks/challenge/${challenge._id}`, {
         type: 'daily',
         text: 'Daily in challenge',
         reminders: [
-          {time: new Date(), startDate: new Date()},
+          { time: new Date(), startDate: new Date() },
         ],
         checklist: [
-          {text: 123, completed: false},
+          { text: 123, completed: false },
         ],
         collapseChecklist: false,
       });
@@ -81,11 +88,11 @@ describe('PUT /tasks/:id', () => {
       await user.sync();
 
       // Pick challenge task
-      let challengeUserTaskId = user.tasksOrder.dailys[user.tasksOrder.dailys.length - 1];
+      const challengeUserTaskId = user.tasksOrder.dailys[user.tasksOrder.dailys.length - 1];
 
-      let challengeUserTask = await user.get(`/tasks/${challengeUserTaskId}`);
+      const challengeUserTask = await user.get(`/tasks/${challengeUserTaskId}`);
 
-      let savedChallengeUserTask = await user.put(`/tasks/${challengeUserTaskId}`, {
+      const savedChallengeUserTask = await user.put(`/tasks/${challengeUserTaskId}`, {
         _id: 123,
         type: 'daily',
         userId: 123,
@@ -105,12 +112,12 @@ describe('PUT /tasks/:id', () => {
         text: 'new text',
         dateCompleted: 'never',
         reminders: [
-          {time: new Date(), startDate: new Date()},
-          {time: new Date(), startDate: new Date()},
+          { time: new Date(), startDate: new Date() },
+          { time: new Date(), startDate: new Date() },
         ],
         checklist: [
-          {text: 123, completed: false},
-          {text: 456, completed: true},
+          { text: 123, completed: false },
+          { text: 456, completed: true },
         ],
         collapseChecklist: true,
         notes: 'new notes',
@@ -119,7 +126,7 @@ describe('PUT /tasks/:id', () => {
       });
 
       // original task is not touched
-      let updatedChallengeTask = await user.get(`/tasks/${challengeTask._id}`);
+      const updatedChallengeTask = await user.get(`/tasks/${challengeTask._id}`);
       expect(updatedChallengeTask).to.eql(challengeTask);
 
       // ignored
@@ -132,7 +139,8 @@ describe('PUT /tasks/:id', () => {
       expect(savedChallengeUserTask.text).to.equal(challengeUserTask.text);
       expect(savedChallengeUserTask.history).to.eql(challengeUserTask.history);
       expect(savedChallengeUserTask.createdAt).to.equal(challengeUserTask.createdAt);
-      expect(savedChallengeUserTask.updatedAt).to.be.greaterThan(challengeUserTask.updatedAt);
+      expect(new Date(savedChallengeUserTask.updatedAt))
+        .to.be.greaterThan(new Date(challengeUserTask.updatedAt));
       expect(savedChallengeUserTask.challenge).to.eql(challengeUserTask.challenge);
       expect(savedChallengeUserTask.completed).to.equal(challengeUserTask.completed);
       expect(savedChallengeUserTask.dateCompleted).to.equal(challengeUserTask.dateCompleted);
@@ -160,7 +168,7 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('sends task activity webhooks if task is user owned', async () => {
-      let uuid = generateUUID();
+      const uuid = generateUUID();
 
       await user.post('/user/webhook', {
         url: `http://localhost:${server.port}/webhooks/${uuid}`,
@@ -172,31 +180,32 @@ describe('PUT /tasks/:id', () => {
         },
       });
 
-      let task = await user.post('/tasks/user', {
+      const task = await user.post('/tasks/user', {
         text: 'test habit',
         type: 'habit',
       });
 
-      let updatedTask = await user.put(`/tasks/${task.id}`, {
+      const updatedTask = await user.put(`/tasks/${task.id}`, {
         text: 'updated text',
       });
 
       await sleep();
 
-      let body = server.getWebhookData(uuid);
+      const body = server.getWebhookData(uuid);
 
       expect(body.type).to.eql('updated');
       expect(body.task).to.eql(updatedTask);
     });
 
     it('does not send task activity webhooks if task is not user owned', async () => {
-      let uuid = generateUUID();
+      const uuid = generateUUID();
 
       await user.update({
         balance: 10,
       });
-      let guild = await generateGroup(user);
-      let challenge = await generateChallenge(user, guild);
+      const guild = await generateGroup(user);
+      const challenge = await generateChallenge(user, guild);
+      await user.post(`/challenges/${challenge._id}/join`);
 
       await user.post('/user/webhook', {
         url: `http://localhost:${server.port}/webhooks/${uuid}`,
@@ -208,7 +217,7 @@ describe('PUT /tasks/:id', () => {
         },
       });
 
-      let task = await user.post(`/tasks/challenge/${challenge._id}`, {
+      const task = await user.post(`/tasks/challenge/${challenge._id}`, {
         text: 'test habit',
         type: 'habit',
       });
@@ -219,7 +228,7 @@ describe('PUT /tasks/:id', () => {
 
       await sleep();
 
-      let body = server.getWebhookData(uuid);
+      const body = server.getWebhookData(uuid);
 
       expect(body).to.not.exist;
     });
@@ -239,17 +248,17 @@ describe('PUT /tasks/:id', () => {
     it('can update reminders (replace them)', async () => {
       await user.put(`/tasks/${daily._id}`, {
         reminders: [
-          {time: new Date(), startDate: new Date()},
+          { time: new Date(), startDate: new Date() },
         ],
       });
 
-      let id1 = generateUUID();
-      let id2 = generateUUID();
+      const id1 = generateUUID();
+      const id2 = generateUUID();
 
-      let savedDaily = await user.put(`/tasks/${daily._id}`, {
+      const savedDaily = await user.put(`/tasks/${daily._id}`, {
         reminders: [
-          {id: id1, time: new Date(), startDate: new Date()},
-          {id: id2, time: new Date(), startDate: new Date()},
+          { id: id1, time: new Date(), startDate: new Date() },
+          { id: id2, time: new Date(), startDate: new Date() },
         ],
       });
 
@@ -259,7 +268,7 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('can set a alias if no other task has that alias', async () => {
-      let savedDaily = await user.put(`/tasks/${daily._id}`, {
+      const savedDaily = await user.put(`/tasks/${daily._id}`, {
         alias: 'alias',
       });
 
@@ -291,9 +300,19 @@ describe('PUT /tasks/:id', () => {
         text: 'saved',
       });
 
-      let fetchedDaily = await user.get(`/tasks/${daily._id}`);
+      const fetchedDaily = await user.get(`/tasks/${daily._id}`);
 
       expect(fetchedDaily.text).to.eql('saved');
+    });
+
+    // This is a special case for iOS requests
+    it('will round a priority (difficulty)', async () => {
+      daily = await user.put(`/tasks/${daily._id}`, {
+        alias: 'alias',
+        priority: 0.10000000000005,
+      });
+
+      expect(daily.priority).to.eql(0.1);
     });
   });
 
@@ -309,7 +328,7 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('updates a habit', async () => {
-      let savedHabit = await user.put(`/tasks/${habit._id}`, {
+      const savedHabit = await user.put(`/tasks/${habit._id}`, {
         text: 'some new text',
         up: false,
         down: false,
@@ -335,7 +354,7 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('updates a todo', async () => {
-      let savedTodo = await user.put(`/tasks/${todo._id}`, {
+      const savedTodo = await user.put(`/tasks/${todo._id}`, {
         text: 'some new text',
         notes: 'some new notes',
       });
@@ -347,14 +366,14 @@ describe('PUT /tasks/:id', () => {
     it('can update checklists (replace it)', async () => {
       await user.put(`/tasks/${todo._id}`, {
         checklist: [
-          {text: 123, completed: false},
-          {text: 456, completed: true},
+          { text: 123, completed: false },
+          { text: 456, completed: true },
         ],
       });
 
-      let savedTodo = await user.put(`/tasks/${todo._id}`, {
+      const savedTodo = await user.put(`/tasks/${todo._id}`, {
         checklist: [
-          {text: 789, completed: false},
+          { text: 789, completed: false },
         ],
       });
 
@@ -364,12 +383,12 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('can update tags (replace them)', async () => {
-      let finalUUID = generateUUID();
+      const finalUUID = generateUUID();
       await user.put(`/tasks/${todo._id}`, {
         tags: [generateUUID(), generateUUID()],
       });
 
-      let savedTodo = await user.put(`/tasks/${todo._id}`, {
+      const savedTodo = await user.put(`/tasks/${todo._id}`, {
         tags: [finalUUID],
       });
 
@@ -390,30 +409,35 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('updates a daily', async () => {
-      let savedDaily = await user.put(`/tasks/${daily._id}`, {
+      const savedDaily = await user.put(`/tasks/${daily._id}`, {
         text: 'some new text',
         notes: 'some new notes',
         frequency: 'daily',
         everyX: 5,
+        yesterDaily: false,
+        startDate: moment().add(1, 'days').toDate(),
       });
 
       expect(savedDaily.text).to.eql('some new text');
       expect(savedDaily.notes).to.eql('some new notes');
       expect(savedDaily.frequency).to.eql('daily');
       expect(savedDaily.everyX).to.eql(5);
+      expect(savedDaily.isDue).to.be.false;
+      expect(savedDaily.nextDue.length).to.eql(6);
+      expect(savedDaily.yesterDaily).to.be.false;
     });
 
     it('can update checklists (replace it)', async () => {
       await user.put(`/tasks/${daily._id}`, {
         checklist: [
-          {text: 123, completed: false},
-          {text: 456, completed: true},
+          { text: 123, completed: false },
+          { text: 456, completed: true },
         ],
       });
 
-      let savedDaily = await user.put(`/tasks/${daily._id}`, {
+      const savedDaily = await user.put(`/tasks/${daily._id}`, {
         checklist: [
-          {text: 789, completed: false},
+          { text: 789, completed: false },
         ],
       });
 
@@ -423,12 +447,12 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('can update tags (replace them)', async () => {
-      let finalUUID = generateUUID();
+      const finalUUID = generateUUID();
       await user.put(`/tasks/${daily._id}`, {
         tags: [generateUUID(), generateUUID()],
       });
 
-      let savedDaily = await user.put(`/tasks/${daily._id}`, {
+      const savedDaily = await user.put(`/tasks/${daily._id}`, {
         tags: [finalUUID],
       });
 
@@ -441,7 +465,7 @@ describe('PUT /tasks/:id', () => {
         frequency: 'daily',
       });
 
-      let savedDaily = await user.put(`/tasks/${daily._id}`, {
+      const savedDaily = await user.put(`/tasks/${daily._id}`, {
         repeat: {
           m: false,
           su: false,
@@ -464,7 +488,7 @@ describe('PUT /tasks/:id', () => {
         frequency: 'weekly',
       });
 
-      let savedDaily = await user.put(`/tasks/${daily._id}`, {
+      const savedDaily = await user.put(`/tasks/${daily._id}`, {
         everyX: 5,
       });
 
@@ -472,11 +496,63 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('defaults startDate to today if none date object is passed in', async () => {
-      let savedDaily = await user.put(`/tasks/${daily._id}`, {
+      const savedDaily = await user.put(`/tasks/${daily._id}`, {
         frequency: 'weekly',
       });
 
       expect((new Date(savedDaily.startDate)).getDay()).to.eql((new Date()).getDay());
+    });
+  });
+
+  context('monthly dailys', () => {
+    let monthly;
+
+    beforeEach(async () => {
+      // using date literals is discouraged here, daylight savings will break everything
+      const date1 = moment().toDate();
+      monthly = await user.post('/tasks/user', {
+        text: 'test monthly',
+        type: 'daily',
+        frequency: 'monthly',
+        startDate: date1,
+        daysOfMonth: [date1.getDate()],
+      });
+    });
+
+    it('updates days of month when start date updated', async () => {
+      const date2 = moment().add(6, 'months').toDate();
+      const savedMonthly = await user.put(`/tasks/${monthly._id}`, {
+        startDate: date2,
+      });
+
+      expect(savedMonthly.daysOfMonth).to.deep.equal([moment(date2).date()]);
+    });
+
+    it('updates next due when start date updated', async () => {
+      const date2 = moment().add(6, 'months').toDate();
+      const savedMonthly = await user.put(`/tasks/${monthly._id}`, {
+        startDate: date2,
+      });
+
+      expect(savedMonthly.nextDue.length).to.eql(6);
+      expect(moment(savedMonthly.nextDue[0]).toDate()).to.eql(
+        moment(date2).add(1, 'months').startOf('day').toDate(),
+      );
+      expect(moment(savedMonthly.nextDue[1]).toDate()).to.eql(
+        moment(date2).add(2, 'months').startOf('day').toDate(),
+      );
+      expect(moment(savedMonthly.nextDue[2]).toDate()).to.eql(
+        moment(date2).add(3, 'months').startOf('day').toDate(),
+      );
+      expect(moment(savedMonthly.nextDue[3]).toDate()).to.eql(
+        moment(date2).add(4, 'months').startOf('day').toDate(),
+      );
+      expect(moment(savedMonthly.nextDue[4]).toDate()).to.eql(
+        moment(date2).add(5, 'months').startOf('day').toDate(),
+      );
+      expect(moment(savedMonthly.nextDue[5]).toDate()).to.eql(
+        moment(date2).add(6, 'months').startOf('day').toDate(),
+      );
     });
   });
 
@@ -493,7 +569,7 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('updates a reward', async () => {
-      let savedReward = await user.put(`/tasks/${reward._id}`, {
+      const savedReward = await user.put(`/tasks/${reward._id}`, {
         text: 'some new text',
         notes: 'some new notes',
         value: 10,
@@ -505,11 +581,21 @@ describe('PUT /tasks/:id', () => {
     });
 
     it('requires value to be coerced into a number', async () => {
-      let savedReward = await user.put(`/tasks/${reward._id}`, {
+      const savedReward = await user.put(`/tasks/${reward._id}`, {
         value: '100',
       });
 
       expect(savedReward.value).to.eql(100);
+    });
+
+    it('returns an error if reward value is a negative number', async () => {
+      await expect(user.put(`/tasks/${reward._id}`, {
+        value: -10,
+      })).to.eventually.be.rejected.and.eql({
+        code: 400,
+        error: 'BadRequest',
+        message: 'reward validation failed',
+      });
     });
   });
 });

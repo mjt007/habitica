@@ -1,9 +1,10 @@
+import couponCode from 'coupon-code';
 import {
   generateUser,
   translate as t,
   resetHabiticaDB,
-} from '../../../../helpers/api-v3-integration.helper';
-import couponCode from 'coupon-code';
+} from '../../../../helpers/api-integration/v3';
+import apiError from '../../../../../website/server/libs/apiError';
 
 describe('POST /coupons/generate/:event', () => {
   let user;
@@ -25,7 +26,7 @@ describe('POST /coupons/generate/:event', () => {
     await expect(user.post('/coupons/generate/aaa')).to.eventually.be.rejected.and.eql({
       code: 401,
       error: 'NotAuthorized',
-      message: t('noSudoAccess'),
+      message: apiError('noSudoAccess'),
     });
   });
 
@@ -50,7 +51,7 @@ describe('POST /coupons/generate/:event', () => {
       'contributor.sudo': true,
     });
 
-    let coupons = await user.post('/coupons/generate/wondercon?count=2');
+    const coupons = await user.post('/coupons/generate/wondercon?count=2');
     expect(coupons.length).to.equal(2);
     expect(coupons[0].event).to.equal('wondercon');
     expect(couponCode.validate(coupons[1]._id)).to.not.equal(''); // '' means invalid
